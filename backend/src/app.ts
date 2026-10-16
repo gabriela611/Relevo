@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import { OpenPaymentsClientError } from '@interledger/open-payments';
 import { PaymentSaleRequest, OfflineSyncRecord } from '@relevo/shared';
-import { config } from './config.js';
+import { config, MODE_LABEL } from './config.js';
 import { backendCrypto } from './services/cryptoService.js';
 import { dbService } from './services/db.js';
 import { openPaymentsService, PaymentFlowError } from './services/openPayments.js';
@@ -61,7 +61,7 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
     project: 'RELEVO',
     timestamp: Date.now(),
     mode: openPaymentsService.mode,
-    simulator: openPaymentsService.mode === 'simulator',
+    modeLabel: MODE_LABEL[openPaymentsService.mode],
   }));
 
   // 2. Public configuration (backend public key cached by the merchant device for offline verification)
@@ -73,7 +73,7 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
       walletAddress: config.defaultMerchantWallet,
     },
     mode: openPaymentsService.mode,
-    simulator: openPaymentsService.mode === 'simulator',
+    modeLabel: MODE_LABEL[openPaymentsService.mode],
   }));
 
   // 3. Register a sale (idempotent on saleId)

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { CurrencyQuote, PaymentSaleRequest, PaymentState, VerifiedReceipt } from '@relevo/shared';
 import { backendCrypto } from './cryptoService.js';
 import { dbService, PaymentAttempt } from './db.js';
-import { config } from '../config.js';
+import { config, type OpMode } from '../config.js';
 import { fromMinorUnits, toMinorUnits } from './amounts.js';
 import { computeInteractHash, normalizeWalletAddress, type Amount, type PaymentGateway, type WalletInfo } from './gateways/gateway.js';
 import { LiveOpenPaymentsGateway } from './gateways/live.js';
@@ -27,33 +27,41 @@ const POLL_INTERVAL_MS = 1000;
 const toDecimal = (a: Amount) => fromMinorUnits(a.value, a.assetScale);
 
 export class OpenPaymentsService {
-  private gateway: PaymentGateway = new SimulatorGateway();
+  private _gateway: PaymentGateway | null = null;
   /** Serializes verification per sale so concurrent callers can't issue two receipts. */
   private verifying = new Map<string, Promise<VerificationResult>>();
 
-  get mode(): 'live' | 'simulator' {
+  private get gateway(): PaymentGateway {
+    if (!this._gateway) throw new Error('OpenPaymentsService no inicializado: llama init(OP_MODE) al arrancar.');
+    return this._gateway;
+  }
+
+  get mode(): OpMode {
     return this.gateway.mode;
   }
 
   /** Test hook / manual override. */
   useGateway(gateway: PaymentGateway): void {
-    this.gateway = gateway;
+    this._gateway = gateway;
   }
 
-  async init(): Promise<void> {
-    if (config.isSimulator) {
-      console.log('ℹ️ RELEVO Open Payments simulator mode (set OPEN_PAYMENTS_KEY_ID + OPEN_PAYMENTS_PRIVATE_KEY_PATH for live).');
+  /**
+   * Selects the gateway for the explicit mode. In live mode any failure is
+   * fatal: we never silently fall back to the simulator.
+   */
+  async init(mode: OpMode): Promise<void> {
+    if (mode === 'simulator') {
+      this._gateway = new SimulatorGateway();
       return;
     }
+    const { clientWalletAddress, keyId, privateKey } = config.openPayments;
+    if (!keyId || !privateKey) {
+      throw new Error('OP_MODE=live requiere OPEN_PAYMENTS_KEY_ID y OPEN_PAYMENTS_PRIVATE_KEY_PATH en backend/.env.');
+    }
     try {
-      this.gateway = await LiveOpenPaymentsGateway.create({
-        walletAddressUrl: config.openPayments.clientWalletAddress,
-        keyId: config.openPayments.keyId,
-        privateKey: config.openPayments.privateKey,
-      });
-      console.log(`✅ Live Open Payments client as ${config.openPayments.clientWalletAddress}`);
-    } catch (err) {
-      console.warn('⚠️ Could not initialize live Open Payments client, falling back to simulator:', err);
+      this._gateway = await LiveOpenPaymentsGateway.create({ walletAddressUrl: clientWalletAddress, keyId, privateKey });
+    } catch (err: any) {
+      throw new Error(`No se pudo iniciar el cliente Open Payments (live) como ${clientWalletAddress}: ${err?.description || err?.message || err}`);
     }
   }
 

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-test-'));
 process.env.DB_PATH = ':memory:';
 process.env.RELEVO_KEYS_FILE = path.join(tmpDir, 'keys.json');
-process.env.RELEVO_SIMULATOR = 'true';
+process.env.OP_MODE = 'simulator';
 process.env.PUBLIC_BACKEND_URL = 'http://backend.test';
 process.env.FRONTEND_URL = 'http://frontend.test';
 
@@ -60,6 +60,7 @@ function callbackPath(redirectUrl: string) {
 
 before(async () => {
   await backendCrypto.init();
+  await openPaymentsService.init('simulator');
   app = await buildServer();
   const cfg = (await app.inject({ method: 'GET', url: '/api/config' })).json();
   publicKey = await shared.importPublicKeyFromJwk(cfg.backendPublicKeyJwk);
@@ -179,6 +180,19 @@ test('golden rule: no receipt is signed when funds never arrive', async () => {
     openPaymentsService.useGateway(new SimulatorGateway());
     delete (openPaymentsService as { verifyPayment?: unknown }).verifyPayment;
   }
+});
+
+test('health exposes the explicit mode', async () => {
+  const health = (await app.inject({ method: 'GET', url: '/api/health' })).json();
+  assert.equal(health.mode, 'simulator');
+  assert.equal(health.modeLabel, 'SIMULATOR');
+});
+
+test('live mode without credentials refuses to initialize instead of falling back', async () => {
+  const { OpenPaymentsService } = await import('../src/services/openPayments.js');
+  const svc = new OpenPaymentsService();
+  await assert.rejects(svc.init('live'), /OPEN_PAYMENTS_KEY_ID/);
+  assert.throws(() => svc.mode, /no inicializado/);
 });
 
 test('rejects invalid sale payloads', async () => {
