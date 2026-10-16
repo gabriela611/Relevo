@@ -3,7 +3,7 @@ import { CurrencyQuote, PaymentSaleRequest, PaymentState, VerifiedReceipt } from
 import { backendCrypto } from './cryptoService.js';
 import { dbService, PaymentAttempt } from './db.js';
 import { config, type OpMode } from '../config.js';
-import { fromMinorUnits, toMinorUnits } from './amounts.js';
+import { fromMinorUnits, toMinorUnits } from '@relevo/shared';
 import { computeInteractHash, normalizeWalletAddress, type Amount, type PaymentGateway, type WalletInfo } from './gateways/gateway.js';
 import { LiveOpenPaymentsGateway } from './gateways/live.js';
 import { SimulatorGateway } from './gateways/simulator.js';

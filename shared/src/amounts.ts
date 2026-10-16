@@ -29,3 +29,19 @@ export function fromMinorUnits(minor: bigint | string, assetScale: number): stri
   if (assetScale === 0) return digits;
   return `${digits.slice(0, -assetScale)}.${digits.slice(-assetScale)}`;
 }
+
+/**
+ * Exact comparison of two amounts that may use different scales:
+ * returns true when a (minor units at scaleA) >= b (minor units at scaleB).
+ */
+export function isAtLeast(a: { value: string; assetScale: number }, b: { value: string; assetScale: number }): boolean {
+  const scale = Math.max(a.assetScale, b.assetScale);
+  const aNorm = BigInt(a.value) * 10n ** BigInt(scale - a.assetScale);
+  const bNorm = BigInt(b.value) * 10n ** BigInt(scale - b.assetScale);
+  return aNorm >= bNorm;
+}
+
+/** { value: '1500', assetCode: 'USD', assetScale: 2 } -> "15.00 USD" */
+export function formatAmount(a: { value: string; assetCode: string; assetScale: number }): string {
+  return `${fromMinorUnits(a.value, a.assetScale)} ${a.assetCode}`;
+}

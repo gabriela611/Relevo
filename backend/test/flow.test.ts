@@ -16,7 +16,6 @@ const { buildServer } = await import('../src/app.js');
 const { backendCrypto } = await import('../src/services/cryptoService.js');
 const { openPaymentsService } = await import('../src/services/openPayments.js');
 const { SimulatorGateway } = await import('../src/services/gateways/simulator.js');
-const { toMinorUnits, fromMinorUnits } = await import('../src/services/amounts.js');
 const shared = await import('@relevo/shared');
 
 type App = Awaited<ReturnType<typeof buildServer>>;
@@ -69,15 +68,6 @@ before(async () => {
 after(async () => {
   await app.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
-});
-
-test('amount helpers convert between decimals and minor units exactly', () => {
-  assert.equal(toMinorUnits('15.00', 2), 1500n);
-  assert.equal(toMinorUnits('0.1', 2), 10n);
-  assert.equal(toMinorUnits('7', 0), 7n);
-  assert.throws(() => toMinorUnits('1.234', 2));
-  assert.equal(fromMinorUnits(5n, 2), '0.05');
-  assert.equal(fromMinorUnits('1550', 2), '15.50');
 });
 
 test('full flow: quote -> authorize -> callback issues a receipt that verifies offline', async () => {

@@ -7,7 +7,7 @@ import { config, MODE_LABEL } from './config.js';
 import { backendCrypto } from './services/cryptoService.js';
 import { dbService } from './services/db.js';
 import { openPaymentsService, PaymentFlowError } from './services/openPayments.js';
-import { isValidDecimalAmount } from './services/amounts.js';
+import { isValidDecimalAmount } from '@relevo/shared';
 
 /** Validates the sale fields the backend relies on and fills harmless defaults. */
 function normalizeSale(input: unknown): PaymentSaleRequest | string {
