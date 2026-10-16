@@ -7,11 +7,13 @@ import {
   importPublicKeyFromJwk,
   computeSha256,
   signData,
+  verifySignature,
   getReceiptPayloadForSigning,
 } from '@relevo/shared';
 import { VerifiedReceipt } from '@relevo/shared';
+import { config } from '../config.js';
 
-const KEYS_FILE = path.resolve(process.cwd(), '.relevo-backend-keys.json');
+const KEYS_FILE = path.resolve(process.cwd(), config.keysFile);
 
 interface StoredKeys {
   publicKeyJwk: JsonWebKey;
@@ -69,6 +71,16 @@ class BackendCryptoService {
       throw new Error('BackendCryptoService not initialized. Call init() first.');
     }
     return this.publicKeyJwk;
+  }
+
+  /** True only if the receipt was signed by this backend and has not been altered. */
+  async isAuthenticReceipt(receipt: VerifiedReceipt): Promise<boolean> {
+    if (!this.keyPair) {
+      await this.init();
+    }
+    const digest = await computeSha256(getReceiptPayloadForSigning(receipt));
+    if (digest !== receipt.payloadDigest) return false;
+    return verifySignature(digest, receipt.backendSignature, this.keyPair!.publicKey);
   }
 
   async issueSignedReceipt(params: {

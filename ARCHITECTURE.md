@@ -25,11 +25,16 @@ relevo/
 │   ├── tsconfig.json
 │   └── src/
 │       ├── config.ts         # Parámetros de entorno y defaults
-│       ├── server.ts         # API REST Fastify
+│       ├── app.ts            # Rutas REST Fastify (buildServer) — contrato en docs/API.md
+│       ├── server.ts         # Arranque del servidor
 │       └── services/
+│           ├── amounts.ts       # Conversión decimal <-> unidades mínimas (BigInt)
 │           ├── cryptoService.ts # Gestión de clave maestra y firmado ECDSA
-│           ├── db.ts            # Capa de persistencia SQLite nativa
-│           └── openPayments.ts  # Cliente SDK Open Payments y cotizaciones multidivisa
+│           ├── db.ts            # Capa de persistencia SQLite nativa (sales, payments, receipts)
+│           ├── openPayments.ts  # Orquestador: quote -> GNAP -> outgoing -> verificación -> recibo
+│           └── gateways/
+│               ├── live.ts      # Cliente real @interledger/open-payments
+│               └── simulator.ts # Mismo flujo en memoria (demo sin credenciales)
 └── frontend/                 # @relevo/frontend: Interfaz PWA Mobile-First
     ├── package.json
     ├── vite.config.ts        # Vite + Tailwind CSS v4 + Proxy API
