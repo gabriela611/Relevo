@@ -5,6 +5,9 @@ import type { Amount } from './gateways/gateway.js';
 
 export type PaymentAttemptStatus = 'QUOTED' | 'AUTHORIZATION_PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
+/** Result of checking the GNAP interaction hash on the callback. */
+export type HashCheck = 'MATCH' | 'MISMATCH' | 'ABSENT';
+
 export interface PaymentAttempt {
   id: string;
   saleId: string;
@@ -21,6 +24,7 @@ export interface PaymentAttempt {
   continueToken?: string;
   redirectUrl?: string;
   outgoingPaymentId?: string;
+  hashCheck?: HashCheck;
   error?: string;
   createdAt: number;
   updatedAt: number;
@@ -34,6 +38,7 @@ const PAYMENT_UPDATABLE_COLUMNS = {
   continueToken: 'continue_token',
   redirectUrl: 'redirect_url',
   outgoingPaymentId: 'outgoing_payment_id',
+  hashCheck: 'hash_check',
   error: 'error',
 } as const;
 
@@ -55,6 +60,7 @@ function rowToPayment(row: Record<string, unknown>): PaymentAttempt {
     continueToken: opt(row.continue_token),
     redirectUrl: opt(row.redirect_url),
     outgoingPaymentId: opt(row.outgoing_payment_id),
+    hashCheck: opt(row.hash_check) as HashCheck | undefined,
     error: opt(row.error),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -114,6 +120,7 @@ db.exec(`
     continue_token TEXT,
     redirect_url TEXT,
     outgoing_payment_id TEXT,
+    hash_check TEXT,
     error TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -136,6 +143,12 @@ db.exec(`
     FOREIGN KEY(sale_id) REFERENCES sales(sale_id)
   );
 `);
+
+// Additive migrations for local databases created by earlier versions.
+const paymentCols = db.prepare(`PRAGMA table_info(payments)`).all() as Array<{ name: string }>;
+if (!paymentCols.some((c) => c.name === 'hash_check')) {
+  db.exec(`ALTER TABLE payments ADD COLUMN hash_check TEXT`);
+}
 
 export const dbService = {
   // Merchant operations

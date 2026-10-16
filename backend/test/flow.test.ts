@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import type { WalletInfo } from '../src/services/gateways/gateway.js';
 
 // Configure before any backend module reads config.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-test-'));
@@ -168,18 +169,114 @@ test('/api/sync rejects forged receipts and accepts genuine ones', async () => {
   assert.equal(stored.status, 'OFFLINE_VERIFIED');
 });
 
-test('payer rejecting the grant fails the attempt but keeps the sale payable', async () => {
+test('buyer rejecting in the wallet -> payment=failed&reason=GRANT_REJECTED, sale stays payable', async () => {
   const sale = newSale();
   const { paymentId } = await quoteAndAuthorize(sale);
 
   const cb = await app.inject({ method: 'GET', url: `/api/payments/callback?paymentId=${paymentId}&result=grant_rejected` });
-  assert.equal(new URL(cb.headers.location as string).searchParams.get('payment'), 'failed');
+  const loc = new URL(cb.headers.location as string);
+  assert.equal(loc.searchParams.get('payment'), 'failed');
+  assert.equal(loc.searchParams.get('reason'), 'GRANT_REJECTED');
+  assert.match(loc.searchParams.get('error') ?? '', /rechazó/);
 
   const status = (await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json();
   assert.equal(status.status, 'FAILED');
   const { sale: stored, receipt } = (await app.inject({ method: 'GET', url: `/api/sales/${sale.saleId}` })).json();
   assert.equal(stored.status, 'WAITING_PAYMENT');
   assert.equal(receipt, null);
+
+  // The buyer can try again with a new quote.
+  const { redirectUrl } = await quoteAndAuthorize(sale);
+  const retry = await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
+  assert.equal(new URL(retry.headers.location as string).searchParams.get('payment'), 'success');
+});
+
+test('callback without interact_ref -> payment=failed&reason=MISSING_INTERACT_REF', async () => {
+  const sale = newSale();
+  const { paymentId } = await quoteAndAuthorize(sale);
+  const cb = await app.inject({ method: 'GET', url: `/api/payments/callback?paymentId=${paymentId}` });
+  const loc = new URL(cb.headers.location as string);
+  assert.equal(loc.searchParams.get('payment'), 'failed');
+  assert.equal(loc.searchParams.get('reason'), 'MISSING_INTERACT_REF');
+});
+
+test('quote expiring within 60 s is re-quoted instead of authorized', async () => {
+  class ShortQuoteOnce extends SimulatorGateway {
+    private first = true;
+    override async createQuote(payer: WalletInfo, incomingPaymentId: string) {
+      const q = await super.createQuote(payer, incomingPaymentId);
+      if (this.first) {
+        this.first = false;
+        return { ...q, expiresAt: new Date(Date.now() + 30_000).toISOString() };
+      }
+      return q;
+    }
+  }
+  openPaymentsService.useGateway(new ShortQuoteOnce());
+  try {
+    const sale = newSale();
+    const { quote } = (await app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale, payerWalletAddress: PAYER_EUR } })).json();
+
+    const first = (await app.inject({ method: 'POST', url: '/api/payments/authorize', payload: { quoteId: quote.quoteId } })).json();
+    assert.equal(first.requoted, true);
+    assert.equal(first.redirectUrl, undefined);
+    assert.notEqual(first.quote.quoteId, quote.quoteId);
+    assert.equal(first.quote.receiveAmount.value, '15.00');
+    assert.ok(first.quote.expiresAt - Date.now() > 60_000);
+
+    const old = (await app.inject({ method: 'GET', url: `/api/payments/${quote.quoteId}` })).json();
+    assert.equal(old.status, 'FAILED');
+    assert.match(old.error, /^QUOTE_EXPIRED/);
+
+    const second = (await app.inject({ method: 'POST', url: '/api/payments/authorize', payload: { quoteId: first.quote.quoteId } })).json();
+    assert.equal(second.requoted, false);
+    assert.ok(second.redirectUrl);
+  } finally {
+    openPaymentsService.useGateway(new SimulatorGateway());
+  }
+});
+
+test('interaction hash: MATCH recorded; mismatch warns when STRICT_HASH=false and rejects when true', async () => {
+  const { config } = await import('../src/config.js');
+
+  // Correct hash from the (simulated) wallet.
+  {
+    const sale = newSale();
+    const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
+    await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
+    assert.equal((await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json().hashCheck, 'MATCH');
+  }
+
+  const tamperedHash = (redirectUrl: string) => {
+    const u = new URL(redirectUrl);
+    u.searchParams.set('hash', 'AAAA');
+    return u.pathname + u.search;
+  };
+
+  assert.equal(config.strictHash, false, 'STRICT_HASH must default to false');
+  {
+    const sale = newSale();
+    const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
+    const cb = await app.inject({ method: 'GET', url: tamperedHash(redirectUrl) });
+    assert.equal(new URL(cb.headers.location as string).searchParams.get('payment'), 'success');
+    assert.equal((await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json().hashCheck, 'MISMATCH');
+  }
+
+  config.strictHash = true;
+  try {
+    const sale = newSale();
+    const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
+    const cb = await app.inject({ method: 'GET', url: tamperedHash(redirectUrl) });
+    const loc = new URL(cb.headers.location as string);
+    assert.equal(loc.searchParams.get('payment'), 'failed');
+    assert.equal(loc.searchParams.get('reason'), 'HASH_MISMATCH');
+    const status = (await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json();
+    assert.equal(status.hashCheck, 'MISMATCH');
+    assert.equal(status.status, 'FAILED');
+    assert.equal((await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` })).statusCode, 404);
+  } finally {
+    config.strictHash = false;
+  }
 });
 
 test('golden rule: no receipt is signed when funds never arrive', async () => {

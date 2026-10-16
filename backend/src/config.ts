@@ -28,6 +28,12 @@ export interface ServerConfig {
   };
   /** How long to poll the incoming payment for funds after creating the outgoing payment. */
   verifyTimeoutMs: number;
+  /**
+   * GNAP interaction hash on the callback. false (default): log a warning on
+   * mismatch and continue. true: reject the callback. Flip to true only after a
+   * live smoke run reports "hash: MATCH".
+   */
+  strictHash: boolean;
 }
 
 const BACKEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,6 +61,7 @@ export const config: ServerConfig = {
     privateKey: process.env.OPEN_PAYMENTS_PRIVATE_KEY_PATH || process.env.OPEN_PAYMENTS_PRIVATE_KEY || '',
   },
   verifyTimeoutMs: parseInt(process.env.VERIFY_TIMEOUT_MS || '15000', 10),
+  strictHash: process.env.STRICT_HASH === 'true',
 };
 
 /** Returns the configured mode or throws a message meant for the person starting the server. */

@@ -123,8 +123,9 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
   fastify.post('/api/payments/authorize', async (req, reply) => {
     const { quoteId } = (req.body ?? {}) as { quoteId?: string };
     if (!quoteId) return reply.badRequest('quoteId es requerido.');
-    const { paymentId, redirectUrl } = await openPaymentsService.authorize(quoteId);
-    return { success: true, paymentId, redirectUrl };
+    // Either { requoted: false, paymentId, redirectUrl } or, if the quote was about to
+    // expire, { requoted: true, quote } with a new quoteId to show and authorize again.
+    return { success: true, ...(await openPaymentsService.authorize(quoteId)) };
   });
 
   // 9. GNAP finish redirect target: completes the payment and sends the browser back to the PWA
@@ -141,10 +142,12 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
       });
       target.searchParams.set('saleId', outcome.saleId);
       target.searchParams.set('payment', outcome.result);
+      if (outcome.reason) target.searchParams.set('reason', outcome.reason);
       if (outcome.error) target.searchParams.set('error', outcome.error);
     } catch (err: any) {
       fastify.log.error(err);
       target.searchParams.set('payment', 'failed');
+      target.searchParams.set('reason', err instanceof PaymentFlowError && err.statusCode === 404 ? 'UNKNOWN_PAYMENT' : 'INTERNAL_ERROR');
       target.searchParams.set('error', err?.description || err?.message || 'Error en el pago.');
     }
     if (q.paymentId) target.searchParams.set('paymentId', q.paymentId);
