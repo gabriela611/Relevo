@@ -55,36 +55,64 @@ export interface CurrencyQuote {
   expiresAt: number;
 }
 
-export interface VerifiedReceipt {
-  version: '1';
-  receiptId: string;          // Unique receipt identifier (UUID)
-  saleId: string;             // Matches PaymentSaleRequest.saleId exactly
-  merchantWalletAddress: string;
-  payerWalletAddress: string;
-  amountReceived: string;     // Exact amount verified by Open Payments incoming payment
-  currency: string;           // Asset code received
+/** Which rail produced a receipt. Simulator receipts are never real money. */
+export type PaymentMode = 'live' | 'simulator';
+
+/** Open Payments amount: integer `value` in minor units ("1500" + scale 2 = 15.00). */
+export interface ReceiptAmount {
+  value: string;
+  assetCode: string;
   assetScale: number;
-  incomingPaymentId: string;  // Open Payments incoming payment identifier URL
-  outgoingPaymentId?: string; // Open Payments outgoing payment identifier
-  timestamp: number;          // Issuance timestamp (Unix ms)
-  backendSignature: string;   // ECDSA P-256 signature by Relevo trusted backend
-  payloadDigest: string;      // SHA-256 canonical hash of the payment receipt data
 }
 
+/**
+ * Receipt v2. Every field except payloadDigest/backendSignature is covered by
+ * the signature. It deliberately carries no payer data (it is shown as a QR).
+ */
+export interface VerifiedReceipt {
+  version: '2';
+  receiptId: string;            // Unique receipt identifier (UUID)
+  saleId: string;               // Binds the receipt to one sale created on the merchant device
+  merchantWallet: string;       // Wallet address that received the funds
+  amountReceived: ReceiptAmount; // Read from the merchant's incoming payment, not from the quote
+  incomingPaymentId: string;    // Open Payments incoming payment URL (merchant side)
+  outgoingPaymentId: string;    // Open Payments outgoing payment URL (payer side)
+  issuedAt: number;             // Unix ms
+  keyId: string;                // RFC 7638 thumbprint of the backend signing key
+  mode: PaymentMode;
+  payloadDigest: string;        // SHA-256 (hex) of the canonical signed fields
+  backendSignature: string;     // ECDSA P-256 / SHA-256, IEEE P1363 (r||s, 64 bytes), base64url
+}
+
+export type UnsignedReceipt = Omit<VerifiedReceipt, 'payloadDigest' | 'backendSignature'>;
+
+/** Public key the merchant device pins while online (GET /api/receipt-key). */
+export interface ReceiptKeyInfo {
+  keyId: string;
+  alg: 'ES256';
+  publicKeyJwk: JsonWebKey;
+}
+
+export type ReceiptErrorCode =
+  | 'INVALID_FORMAT'
+  | 'KEY_MISMATCH'
+  | 'INVALID_SIGNATURE'
+  | 'UNKNOWN_SALE'
+  | 'ALREADY_REDEEMED'
+  | 'MERCHANT_MISMATCH'
+  | 'ASSET_MISMATCH'
+  | 'AMOUNT_INSUFFICIENT';
+
 export type ReceiptValidationResult =
-  | { valid: true; receipt: VerifiedReceipt; reason?: string }
   | {
-      valid: false;
-      error:
-        | 'INVALID_SIGNATURE'
-        | 'SALE_ID_MISMATCH'
-        | 'AMOUNT_MISMATCH'
-        | 'CURRENCY_MISMATCH'
-        | 'EXPIRED_RECEIPT'
-        | 'ALREADY_REDEEMED'
-        | 'INVALID_FORMAT';
+      valid: true;
+      /** SIMULATED_PAYMENT must be shown as a simulation, never as money received. */
+      kind: 'LIVE_PAYMENT' | 'SIMULATED_PAYMENT';
+      receipt: VerifiedReceipt;
+      sale: PaymentSaleRequest;
       message: string;
-    };
+    }
+  | { valid: false; error: ReceiptErrorCode; message: string };
 
 export interface OfflineSyncRecord {
   saleId: string;

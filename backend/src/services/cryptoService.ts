@@ -7,11 +7,12 @@ import {
   importPublicKeyFromJwk,
   computeJwkThumbprint,
   computeSha256,
-  signData,
   verifySignature,
   getReceiptPayloadForSigning,
+  isReceiptV2,
+  signReceipt,
 } from '@relevo/shared';
-import { VerifiedReceipt } from '@relevo/shared';
+import type { ReceiptKeyInfo, UnsignedReceipt, VerifiedReceipt } from '@relevo/shared';
 import { config } from '../config.js';
 
 interface StoredKeys {
@@ -91,51 +92,28 @@ class BackendCryptoService {
     return this.keyId;
   }
 
-  /** True only if the receipt was signed by this backend and has not been altered. */
-  async isAuthenticReceipt(receipt: VerifiedReceipt): Promise<boolean> {
+  getReceiptKeyInfo(): ReceiptKeyInfo {
+    return { keyId: this.getKeyId(), alg: 'ES256', publicKeyJwk: this.getPublicKeyJwk() };
+  }
+
+  /** True only if the object is a v2 receipt signed by this backend's current key and unaltered. */
+  async isAuthenticReceipt(receipt: unknown): Promise<boolean> {
     await this.init();
+    if (!isReceiptV2(receipt) || receipt.keyId !== this.keyId) return false;
     const digest = await computeSha256(getReceiptPayloadForSigning(receipt));
     if (digest !== receipt.payloadDigest) return false;
     return verifySignature(digest, receipt.backendSignature, this.keyPair!.publicKey);
   }
 
-  async issueSignedReceipt(params: {
-    receiptId: string;
-    saleId: string;
-    merchantWalletAddress: string;
-    payerWalletAddress: string;
-    amountReceived: string;
-    currency: string;
-    assetScale: number;
-    incomingPaymentId: string;
-    outgoingPaymentId?: string;
-  }): Promise<VerifiedReceipt> {
+  /** Signs a v2 receipt; version, keyId and issuedAt are set here so callers can't forge them. */
+  async issueSignedReceipt(
+    params: Omit<UnsignedReceipt, 'version' | 'keyId' | 'issuedAt'>
+  ): Promise<VerifiedReceipt> {
     await this.init();
-
-    const timestamp = Date.now();
-    const unsignedReceiptPayload = {
-      version: '1' as const,
-      receiptId: params.receiptId,
-      saleId: params.saleId,
-      merchantWalletAddress: params.merchantWalletAddress,
-      payerWalletAddress: params.payerWalletAddress,
-      amountReceived: params.amountReceived,
-      currency: params.currency,
-      assetScale: params.assetScale,
-      incomingPaymentId: params.incomingPaymentId,
-      outgoingPaymentId: params.outgoingPaymentId,
-      timestamp,
-    };
-
-    const canonicalContent = getReceiptPayloadForSigning(unsignedReceiptPayload);
-    const payloadDigest = await computeSha256(canonicalContent);
-    const backendSignature = await signData(payloadDigest, this.keyPair!.privateKey);
-
-    return {
-      ...unsignedReceiptPayload,
-      payloadDigest,
-      backendSignature,
-    };
+    return signReceipt(
+      { ...params, version: '2', keyId: this.keyId!, issuedAt: Date.now() },
+      this.keyPair!.privateKey
+    );
   }
 }
 

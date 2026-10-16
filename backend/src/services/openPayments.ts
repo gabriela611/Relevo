@@ -242,13 +242,11 @@ export class OpenPaymentsService {
         const receipt = await backendCrypto.issueSignedReceipt({
           receiptId: randomUUID(),
           saleId,
-          merchantWalletAddress: sale.merchantWalletAddress,
-          payerWalletAddress: attempt.payerWallet,
-          amountReceived: toDecimal(incoming.receivedAmount),
-          currency: incoming.receivedAmount.assetCode,
-          assetScale: incoming.receivedAmount.assetScale,
+          merchantWallet: sale.merchantWalletAddress,
+          amountReceived: { ...incoming.receivedAmount },
           incomingPaymentId: attempt.incomingPaymentId,
-          outgoingPaymentId: attempt.outgoingPaymentId,
+          outgoingPaymentId: attempt.outgoingPaymentId!,
+          mode: this.gateway.mode,
         });
         dbService.saveReceipt(receipt);
         dbService.updateSaleStatus(saleId, 'PAYMENT_VERIFIED');

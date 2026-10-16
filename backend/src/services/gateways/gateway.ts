@@ -69,9 +69,4 @@ export function computeInteractHash(clientNonce: string, finishNonce: string, in
     .digest('base64');
 }
 
-export function normalizeWalletAddress(walletAddressUrl: string): string {
-  const trimmed = walletAddressUrl.trim();
-  if (trimmed.startsWith('$')) return 'https://' + trimmed.substring(1);
-  if (!/^https?:\/\//i.test(trimmed)) return 'https://' + trimmed;
-  return trimmed;
-}
+export { normalizeWalletAddress } from '@relevo/shared';

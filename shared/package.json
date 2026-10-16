@@ -15,7 +15,8 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json"
   },
   "devDependencies": {
     "typescript": "^5.8.2",

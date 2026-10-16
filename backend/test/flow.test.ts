@@ -20,7 +20,7 @@ const shared = await import('@relevo/shared');
 
 type App = Awaited<ReturnType<typeof buildServer>>;
 let app: App;
-let publicKey: CryptoKey;
+let pinnedKey: Awaited<ReturnType<typeof shared.importPinnedReceiptKey>>;
 
 const MERCHANT = 'https://ilp.interledger-test.dev/tienda-usd';
 const PAYER_EUR = 'https://ilp.interledger-test.dev/turista-eur';
@@ -61,14 +61,34 @@ before(async () => {
   await backendCrypto.init();
   await openPaymentsService.init('simulator');
   app = await buildServer();
-  const cfg = (await app.inject({ method: 'GET', url: '/api/config' })).json();
-  publicKey = await shared.importPublicKeyFromJwk(cfg.backendPublicKeyJwk);
+  // The merchant device pins only this, while online.
+  const keyInfo = (await app.inject({ method: 'GET', url: '/api/receipt-key' })).json();
+  assert.equal(keyInfo.alg, 'ES256');
+  pinnedKey = await shared.importPinnedReceiptKey(keyInfo);
 });
 
 after(async () => {
   await app.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+/** Verifier context of a merchant device that created `sale`. */
+function deviceCtx(sale: ReturnType<typeof newSale>, redeemed = new Set<string>()) {
+  return {
+    pinnedKey,
+    deviceWallet: MERCHANT,
+    getDeviceSale: (id: string) => (id === sale.saleId ? sale : null),
+    isRedeemed: (r: { receiptId: string }) => redeemed.has(r.receiptId),
+  };
+}
+
+async function paidSale() {
+  const sale = newSale();
+  const { redirectUrl } = await quoteAndAuthorize(sale);
+  await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
+  const { receipt } = (await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` })).json();
+  return { sale, receipt };
+}
 
 test('full flow: quote -> authorize -> callback issues a receipt that verifies offline', async () => {
   const sale = newSale();
@@ -87,10 +107,11 @@ test('full flow: quote -> authorize -> callback issues a receipt that verifies o
 
   const { sale: stored, receipt } = (await app.inject({ method: 'GET', url: `/api/sales/${sale.saleId}` })).json();
   assert.equal(stored.status, 'PAYMENT_VERIFIED');
-  assert.equal(receipt.amountReceived, '15.00');
-
-  const result = await shared.verifyReceiptOffline(receipt, sale, publicKey, new Set());
-  assert.equal(result.valid, true);
+  assert.deepEqual(receipt.amountReceived, { value: '1500', assetCode: 'USD', assetScale: 2 });
+  assert.equal(receipt.version, '2');
+  assert.equal(receipt.mode, 'simulator');
+  assert.equal(receipt.keyId, pinnedKey.keyId);
+  assert.equal('payerWallet' in receipt || 'payerWalletAddress' in receipt, false);
 
   // Callback replay is harmless and does not issue a second receipt.
   await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
@@ -102,15 +123,34 @@ test('full flow: quote -> authorize -> callback issues a receipt that verifies o
   assert.equal(requote.statusCode, 409);
 });
 
-test('tampered receipts fail offline verification and are rejected by /api/sync', async () => {
-  const sale = newSale();
-  const { redirectUrl } = await quoteAndAuthorize(sale);
-  await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
-  const { receipt } = (await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` })).json();
+test('interop: backend receipt -> QR -> shared parse -> verify with only the pinned public key', async () => {
+  const { sale, receipt } = await paidSale();
 
-  const forged = { ...receipt, amountReceived: '1500.00' };
-  const offline = await shared.verifyReceiptOffline(forged, { ...sale, amount: '1500.00' }, publicKey);
-  assert.equal(offline.valid, false);
+  // IEEE P1363 (r||s) signature: exactly 64 bytes, what Web Crypto in the browser expects.
+  assert.equal(shared.base64UrlToArrayBuffer(receipt.backendSignature).byteLength, 64);
+
+  const scanned = shared.parseReceiptFromQr(shared.encodeReceiptToQr(receipt));
+  assert.ok(scanned);
+  const result = await shared.verifyReceiptOffline(scanned, deviceCtx(sale));
+  assert.equal(result.valid, true);
+  assert.equal(result.valid && result.kind, 'SIMULATED_PAYMENT');
+
+  // Tampering any bound field breaks the signature.
+  const tampered = [
+    { ...receipt, amountReceived: { ...receipt.amountReceived, value: '150000' } },
+    { ...receipt, saleId: `${receipt.saleId}-x` },
+    { ...receipt, merchantWallet: 'https://ilp.interledger-test.dev/atacante' },
+    { ...receipt, mode: 'live' },
+  ];
+  for (const forged of tampered) {
+    const r = await shared.verifyReceiptOffline(forged, deviceCtx({ ...sale, saleId: forged.saleId }));
+    assert.deepEqual([r.valid, !r.valid && r.error], [false, 'INVALID_SIGNATURE'], JSON.stringify(forged).slice(0, 80));
+  }
+});
+
+test('/api/sync rejects forged receipts and accepts genuine ones', async () => {
+  const { sale, receipt } = await paidSale();
+  const forged = { ...receipt, amountReceived: { ...receipt.amountReceived, value: '150000' } };
 
   const sync = await app.inject({
     method: 'POST',
@@ -205,7 +245,7 @@ test('receipt key: stable keyId, never overwritten, mandatory in live mode', asy
   assert.equal(await shared.computeJwkThumbprint(JSON.parse(before).publicKeyJwk), keyId);
 
   const keyInfo = (await app.inject({ method: 'GET', url: '/api/config' })).json();
-  assert.equal(await shared.computeJwkThumbprint(keyInfo.backendPublicKeyJwk), backendCrypto.getKeyId());
+  assert.equal(await shared.computeJwkThumbprint(keyInfo.receiptKey.publicKeyJwk), backendCrypto.getKeyId());
 
   // A fresh service in live mode with no key file must refuse instead of generating one.
   const original = { opMode: config.opMode, keysFile: config.keysFile };

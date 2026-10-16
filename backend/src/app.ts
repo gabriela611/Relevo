@@ -64,9 +64,13 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
     modeLabel: MODE_LABEL[openPaymentsService.mode],
   }));
 
-  // 2. Public configuration (backend public key cached by the merchant device for offline verification)
+  // 2a. Receipt-signing public key. The merchant device pins it while online and
+  //     verifies receipts offline against it. keyId = RFC 7638 thumbprint.
+  fastify.get('/api/receipt-key', async () => backendCrypto.getReceiptKeyInfo());
+
+  // 2b. Public configuration
   fastify.get('/api/config', async () => ({
-    backendPublicKeyJwk: backendCrypto.getPublicKeyJwk(),
+    receiptKey: backendCrypto.getReceiptKeyInfo(),
     defaultMerchant: {
       id: 'merchant-default',
       name: config.defaultMerchantName,
@@ -182,9 +186,13 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
         if (typeof sale !== 'string') dbService.createSale(sale, 'WAITING_PAYMENT');
       }
       if (record.verifiedReceipt) {
-        // Never trust a receipt from a device: it must carry our own valid signature.
+        // Never trust a receipt from a device: it must be a v2 receipt with our own valid signature.
         if (!(await backendCrypto.isAuthenticReceipt(record.verifiedReceipt))) {
           rejected.push({ saleId: record.saleId, reason: 'INVALID_SIGNATURE' });
+          continue;
+        }
+        if (record.verifiedReceipt.mode !== openPaymentsService.mode) {
+          rejected.push({ saleId: record.saleId, reason: 'MODE_MISMATCH' });
           continue;
         }
         dbService.saveReceipt(record.verifiedReceipt);

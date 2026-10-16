@@ -64,6 +64,13 @@ function rowToPayment(row: Record<string, unknown>): PaymentAttempt {
 // Initialize SQLite database
 const db = new DatabaseSync(config.dbPath);
 
+// v1 receipts (with payer data, decimal amounts) are incompatible with receipt v2 and
+// were never valid for the new verifier: drop the old table on local dev databases.
+const legacyReceiptCols = db.prepare(`PRAGMA table_info(receipts)`).all() as Array<{ name: string }>;
+if (legacyReceiptCols.some((c) => c.name === 'payer_wallet')) {
+  db.exec(`DROP TABLE receipts`);
+}
+
 // Create schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS merchants (
@@ -117,9 +124,11 @@ db.exec(`
     receipt_id TEXT PRIMARY KEY,
     sale_id TEXT NOT NULL UNIQUE,
     merchant_wallet TEXT NOT NULL,
-    payer_wallet TEXT NOT NULL,
-    amount_received TEXT NOT NULL,
-    currency TEXT NOT NULL,
+    amount_value TEXT NOT NULL,
+    asset_code TEXT NOT NULL,
+    asset_scale INTEGER NOT NULL,
+    mode TEXT NOT NULL,
+    key_id TEXT NOT NULL,
     payload_digest TEXT NOT NULL,
     backend_signature TEXT NOT NULL,
     raw_json TEXT NOT NULL,
@@ -272,23 +281,25 @@ export const dbService = {
   saveReceipt(receipt: VerifiedReceipt): void {
     const stmt = db.prepare(`
       INSERT INTO receipts (
-        receipt_id, sale_id, merchant_wallet, payer_wallet,
-        amount_received, currency, payload_digest, backend_signature, raw_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        receipt_id, sale_id, merchant_wallet, amount_value, asset_code, asset_scale,
+        mode, key_id, payload_digest, backend_signature, raw_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT DO NOTHING
     `);
     // Receipts are immutable once issued: the payer may already hold the QR of the first one.
     stmt.run(
       receipt.receiptId,
       receipt.saleId,
-      receipt.merchantWalletAddress,
-      receipt.payerWalletAddress,
-      receipt.amountReceived,
-      receipt.currency,
+      receipt.merchantWallet,
+      receipt.amountReceived.value,
+      receipt.amountReceived.assetCode,
+      receipt.amountReceived.assetScale,
+      receipt.mode,
+      receipt.keyId,
       receipt.payloadDigest,
       receipt.backendSignature,
       JSON.stringify(receipt),
-      receipt.timestamp
+      receipt.issuedAt
     );
   },
 
