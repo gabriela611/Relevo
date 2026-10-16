@@ -202,3 +202,30 @@ test('rejects invalid sale payloads', async () => {
   const q = await app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale: expired, payerWalletAddress: PAYER_EUR } });
   assert.equal(q.statusCode, 410);
 });
+
+test('receipt key: stable keyId, never overwritten, mandatory in live mode', async () => {
+  const { generateKeyFile } = await import('../src/services/cryptoService.js');
+  const { config } = await import('../src/config.js');
+  const keysFile = path.join(tmpDir, 'other.relevo-backend-keys.json');
+
+  const { keyId } = await generateKeyFile(keysFile);
+  const before = fs.readFileSync(keysFile, 'utf-8');
+  await assert.rejects(generateKeyFile(keysFile), /No se sobrescribe/);
+  assert.equal(fs.readFileSync(keysFile, 'utf-8'), before);
+  assert.equal(await shared.computeJwkThumbprint(JSON.parse(before).publicKeyJwk), keyId);
+
+  const keyInfo = (await app.inject({ method: 'GET', url: '/api/config' })).json();
+  assert.equal(await shared.computeJwkThumbprint(keyInfo.backendPublicKeyJwk), backendCrypto.getKeyId());
+
+  // A fresh service in live mode with no key file must refuse instead of generating one.
+  const original = { opMode: config.opMode, keysFile: config.keysFile };
+  config.opMode = 'live';
+  config.keysFile = path.join(tmpDir, 'missing.relevo-backend-keys.json');
+  try {
+    const { backendCrypto: fresh } = await import(`../src/services/cryptoService.js?fresh=${Date.now()}`);
+    await assert.rejects(fresh.init(), /keys:generate/);
+    assert.equal(fs.existsSync(config.keysFile), false);
+  } finally {
+    Object.assign(config, original);
+  }
+});

@@ -43,5 +43,6 @@ Thumbs.db
 
 # Secrets: RELEVO receipt-signing keys and Open Payments developer keys
 .relevo-backend-keys.json
+*.relevo-backend-keys.json
 *.key
 *.pem
