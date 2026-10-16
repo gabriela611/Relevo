@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
-dotenv.config();
+// Tests set RELEVO_SKIP_DOTENV so a developer's backend/.env can't leak into them.
+if (process.env.RELEVO_SKIP_DOTENV !== '1') dotenv.config();
 
 export type OpMode = 'live' | 'simulator';
 
@@ -15,10 +16,18 @@ export interface ServerConfig {
   keysFile: string;
   defaultMerchantWallet: string;
   defaultMerchantName: string;
-  /** Public URL of this backend, used to build the GNAP interaction finish (callback) URL. */
+  /**
+   * Public HTTPS URL of the PWA (e.g. the cloudflared tunnel). The payer's browser
+   * is sent here after the callback, and it is the CORS origin allowed besides localhost.
+   */
+  publicFrontendUrl: string;
+  /**
+   * Public URL that reaches this backend, used for the GNAP finish (callback) URL.
+   * Defaults to publicFrontendUrl because Vite proxies /api, so one tunnel serves both.
+   */
   publicBackendUrl: string;
-  /** Where the payer's browser is sent after the Open Payments callback completes. */
-  frontendUrl: string;
+  /** Origins allowed by CORS. */
+  corsOrigins: string[];
   openPayments: {
     /** Wallet address that identifies RELEVO as an Open Payments client (owner of the developer key). */
     clientWalletAddress: string;
@@ -43,6 +52,9 @@ function parseOpMode(raw: string | undefined): OpMode | null {
   return v === 'live' || v === 'simulator' ? v : null;
 }
 
+const stripSlash = (u: string) => u.replace(/\/+$/, '');
+const publicFrontendUrl = stripSlash(process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173');
+
 const defaultMerchantWallet = process.env.MERCHANT_WALLET || 'https://ilp.interledger-test.dev/relevo-merchant';
 
 export const config: ServerConfig = {
@@ -53,8 +65,9 @@ export const config: ServerConfig = {
   keysFile: path.resolve(BACKEND_DIR, process.env.RELEVO_KEYS_FILE || '.relevo-backend-keys.json'),
   defaultMerchantWallet,
   defaultMerchantName: process.env.MERCHANT_NAME || 'Doña Elena - Tienda Local',
-  publicBackendUrl: (process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000').replace(/\/$/, ''),
-  frontendUrl: (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, ''),
+  publicFrontendUrl,
+  publicBackendUrl: stripSlash(process.env.PUBLIC_BACKEND_URL || publicFrontendUrl),
+  corsOrigins: [...new Set([new URL(publicFrontendUrl).origin, 'http://localhost:5173', 'http://127.0.0.1:5173'])],
   openPayments: {
     clientWalletAddress: process.env.OPEN_PAYMENTS_CLIENT_WALLET || defaultMerchantWallet,
     keyId: process.env.OPEN_PAYMENTS_KEY_ID || '',

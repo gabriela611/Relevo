@@ -7,11 +7,12 @@ import type { WalletInfo } from '../src/services/gateways/gateway.js';
 
 // Configure before any backend module reads config.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-test-'));
+process.env.RELEVO_SKIP_DOTENV = '1';
 process.env.DB_PATH = ':memory:';
 process.env.RELEVO_KEYS_FILE = path.join(tmpDir, 'keys.json');
 process.env.OP_MODE = 'simulator';
 process.env.PUBLIC_BACKEND_URL = 'http://backend.test';
-process.env.FRONTEND_URL = 'http://frontend.test';
+process.env.PUBLIC_FRONTEND_URL = 'http://frontend.test';
 
 const { buildServer } = await import('../src/app.js');
 const { backendCrypto } = await import('../src/services/cryptoService.js');
@@ -354,5 +355,29 @@ test('receipt key: stable keyId, never overwritten, mandatory in live mode', asy
     assert.equal(fs.existsSync(config.keysFile), false);
   } finally {
     Object.assign(config, original);
+  }
+});
+
+test('CORS allows only the public frontend origin and local dev', async () => {
+  const allowed = await app.inject({ method: 'GET', url: '/api/health', headers: { origin: 'http://frontend.test' } });
+  assert.equal(allowed.headers['access-control-allow-origin'], 'http://frontend.test');
+  const local = await app.inject({ method: 'GET', url: '/api/health', headers: { origin: 'http://localhost:5173' } });
+  assert.equal(local.headers['access-control-allow-origin'], 'http://localhost:5173');
+  const evil = await app.inject({ method: 'GET', url: '/api/health', headers: { origin: 'https://evil.example' } });
+  assert.equal(evil.headers['access-control-allow-origin'], undefined);
+});
+
+test('PUBLIC_BACKEND_URL defaults to PUBLIC_FRONTEND_URL (single tunnel via the Vite proxy)', async () => {
+  const saved = process.env.PUBLIC_BACKEND_URL;
+  delete process.env.PUBLIC_BACKEND_URL;
+  process.env.PUBLIC_FRONTEND_URL = 'https://relevo-demo.trycloudflare.com/';
+  try {
+    const { config: fresh } = await import(`../src/config.js?urls=${Date.now()}`);
+    assert.equal(fresh.publicFrontendUrl, 'https://relevo-demo.trycloudflare.com');
+    assert.equal(fresh.publicBackendUrl, 'https://relevo-demo.trycloudflare.com');
+    assert.ok(fresh.corsOrigins.includes('https://relevo-demo.trycloudflare.com'));
+  } finally {
+    process.env.PUBLIC_BACKEND_URL = saved;
+    process.env.PUBLIC_FRONTEND_URL = 'http://frontend.test';
   }
 });

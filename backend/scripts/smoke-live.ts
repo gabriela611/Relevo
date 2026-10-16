@@ -17,7 +17,7 @@ const BASE = `http://localhost:${PORT}`;
 process.env.OP_MODE = 'live';
 process.env.DB_PATH = ':memory:';
 process.env.PUBLIC_BACKEND_URL = BASE;
-process.env.FRONTEND_URL = `${BASE}/smoke-done`;
+process.env.PUBLIC_FRONTEND_URL = `${BASE}/smoke-done`;
 
 const { config, MODE_LABEL } = await import('../src/config.js');
 const { buildServer } = await import('../src/app.js');

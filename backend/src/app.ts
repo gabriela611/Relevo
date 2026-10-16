@@ -38,7 +38,8 @@ function normalizeSale(input: unknown): PaymentSaleRequest | string {
 export async function buildServer(opts: FastifyServerOptions = {}) {
   const fastify = Fastify(opts);
 
-  await fastify.register(cors, { origin: true, credentials: true });
+  // Only the PWA's public origin (and local dev) may call the API from a browser.
+  await fastify.register(cors, { origin: config.corsOrigins });
   await fastify.register(sensible);
 
   fastify.setErrorHandler((err, _req, reply) => {
@@ -131,7 +132,7 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
   // 9. GNAP finish redirect target: completes the payment and sends the browser back to the PWA
   fastify.get('/api/payments/callback', async (req, reply) => {
     const q = req.query as { paymentId?: string; interact_ref?: string; hash?: string; result?: string };
-    const target = new URL(config.frontendUrl);
+    const target = new URL(config.publicFrontendUrl);
     try {
       if (!q.paymentId) throw new PaymentFlowError(400, 'paymentId faltante.');
       const outcome = await openPaymentsService.handleCallback({
