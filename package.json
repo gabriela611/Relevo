@@ -1,0 +1,22 @@
+{
+  "name": "relevo-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RELEVO: Pay across currencies. Verify without internet.",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev:frontend",
+    "dev:all": "node --run dev:all 2>/dev/null || (npm run dev:backend & npm run dev:frontend)",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "build": "npm run build --workspace=shared && npm run build --workspace=backend && npm run build --workspace=frontend",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
