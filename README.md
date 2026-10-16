@@ -113,18 +113,86 @@ sequenceDiagram
 
 ### Instalación
 ```bash
-# Instalar todas las dependencias del monorepo
 npm install
-
-# Compilar paquete compartido (tipos y criptografía)
-npm run build --workspace=shared
+npm run build --workspace=shared          # tipos, criptografía y verificador offline
+cp backend/.env.example backend/.env      # y edita los valores
 ```
+
+### Modo: `OP_MODE` (obligatorio)
+El backend **no arranca** sin `OP_MODE` en `backend/.env`, y nunca cambia de modo por su cuenta.
+
+| `OP_MODE` | Qué hace | Badge en la PWA |
+|---|---|---|
+| `live` | Open Payments real contra la Interledger Test Wallet. Cualquier error de Open Payments se muestra como error: **no hay fallback al simulador**. | `LIVE · Interledger Test Wallet` |
+| `simulator` | Mismo flujo en memoria, sin red. Los recibos se firman con `mode: "simulator"` y el verificador del comercio los muestra como **SIMULACIÓN**, nunca como pago real. | `SIMULATOR` |
+
+### Llave de firma de recibos
+Los recibos se firman con una llave ECDSA P-256 guardada en `backend/.relevo-backend-keys.json` (ignorado por git). Su `keyId` (huella RFC 7638) queda fijado en cada dispositivo de comercio.
+
+```bash
+npm run keys:generate --workspace=backend   # una sola vez; se niega a sobrescribir una llave existente
+```
+
+En `live` el backend **se niega a arrancar** si la llave no existe, para no rotarla en silencio. Si la llave cambia, los comercios verán *"Este comercio tiene una llave desactualizada. Conéctate a internet una vez para actualizarla."* hasta que vuelvan a fijar `GET /api/receipt-key`. En `simulator` se crea automáticamente si falta.
+
+### Credenciales Open Payments (modo live)
+1. Crea cuentas en https://wallet.interledger-test.dev: una para el **comercio** y otra para el **comprador**, con saldo de prueba.
+2. Settings → Developer Keys → genera la llave. Copia el **Key ID** y guarda `private.key` en `backend/` (ignorado por git).
+3. En `backend/.env` define `OP_MODE=live`, `OPEN_PAYMENTS_CLIENT_WALLET`, `OPEN_PAYMENTS_KEY_ID`, `OPEN_PAYMENTS_PRIVATE_KEY_PATH=./private.key`, `MERCHANT_WALLET`, `SMOKE_MERCHANT_WALLET` y `SMOKE_BUYER_WALLET`.
 
 ### Ejecutar en Desarrollo
 ```bash
-# Iniciar backend (puerto 3000)
-npm run dev:backend
-
-# Iniciar frontend (puerto 5173)
-npm run dev:frontend
+npm run dev:backend    # puerto 3000; imprime "MODE: LIVE · Interledger Test Wallet" o "MODE: SIMULATOR"
+npm run dev:frontend   # puerto 5173; proxy de /api al backend
 ```
+
+### Pruebas
+```bash
+npm test               # compila shared y corre los tests de shared y backend (simulador, sin red)
+npm run typecheck
+```
+
+### Smoke test en vivo (sin frontend)
+Prueba el flujo real completo desde la terminal: venta → incoming payment del comercio → quote del comprador → autorización interactiva → callback local → outgoing payment → verificación del monto recibido → recibo firmado → verificación offline con `@relevo/shared`.
+
+```bash
+npm run smoke:live --workspace=backend
+```
+
+Imprime una URL de consentimiento. Ábrela **en un navegador de esta misma máquina**, entra como el comprador y aprueba. Solo muestra ids, estados y montos formateados, nunca tokens ni llaves. Termina con `RESULT: PASS` (exit 0) o `FAIL` (exit 1).
+
+### `STRICT_HASH`: verificación del hash de interacción GNAP
+Cuando la billetera devuelve al comprador al callback, incluye un `hash` que el backend recalcula.
+
+- `STRICT_HASH=false` (por defecto): si no coincide, se registra una advertencia y el pago continúa. El token de continuación sigue protegiendo el grant.
+- `STRICT_HASH=true`: si no coincide (o falta), el pago se rechaza con `reason=HASH_MISMATCH`.
+
+**Procedimiento:** corre `npm run smoke:live`. Si imprime `hash: MATCH`, cambia a `STRICT_HASH=true` y vuelve a correrlo para confirmar `RESULT: PASS`. Si imprime `hash: MISMATCH`, deja `false` y avisa al equipo de backend.
+
+## 📱 Teléfonos por HTTPS (cámara y service worker)
+
+En un teléfono, `getUserMedia` (cámara para escanear QR) y el service worker **solo funcionan sobre HTTPS**. Basta **un solo túnel**: Vite sirve la PWA y hace de proxy de `/api` (incluido el callback de Open Payments) hacia el backend.
+
+```
+teléfono ──HTTPS──> cloudflared ──> Vite :5173 ──/api──> backend :3000
+```
+
+1. Instala cloudflared: `winget install --id Cloudflare.cloudflared` (Windows) o `brew install cloudflared` (macOS).
+2. Arranca el backend y el frontend (`npm run dev:backend`, `npm run dev:frontend`).
+3. Abre el túnel hacia el frontend:
+   ```bash
+   cloudflared tunnel --url http://localhost:5173
+   ```
+   Copia la URL `https://<algo>.trycloudflare.com` que imprime.
+4. En `backend/.env`:
+   ```
+   PUBLIC_FRONTEND_URL=https://<algo>.trycloudflare.com
+   # PUBLIC_BACKEND_URL se deja vacío: por defecto es igual a PUBLIC_FRONTEND_URL
+   ```
+   y **reinicia el backend**. Con eso, la redirección después de aprobar en la billetera vuelve a la URL pública y CORS acepta ese origen (además de `localhost:5173`).
+5. Abre la URL `https://...trycloudflare.com` en el teléfono.
+
+Notas:
+- La URL de un *quick tunnel* cambia cada vez que reinicias cloudflared: actualiza `PUBLIC_FRONTEND_URL` y reinicia el backend.
+- Vite ya acepta hosts `*.trycloudflare.com` (`server.allowedHosts` en `frontend/vite.config.ts`).
+- Solo si expones el backend por separado (segundo túnel) define `PUBLIC_BACKEND_URL` con su URL pública.

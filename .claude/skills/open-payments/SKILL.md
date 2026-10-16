@@ -23,21 +23,23 @@ description: Reference for implementing or debugging Open Payments / Interledger
 Interaction hash: `base64(sha256(clientNonce \n finishNonce \n interact_ref \n authServerUrl))`.
 
 ## Amounts
-Integer strings in minor units: `{ value: '1500', assetCode: 'USD', assetScale: 2 }` = 15.00 USD. Convert with `backend/src/services/amounts.ts`.
+Integer strings in minor units: `{ value: '1500', assetCode: 'USD', assetScale: 2 }` = 15.00 USD. Convert/compare with `shared/src/amounts.ts` (`toMinorUnits`, `isAtLeast`, `formatAmount`).
 
 ## Test wallet setup (live mode)
-1. Sign up at https://wallet.interledger-test.dev (play money). Create an account + wallet address for **RELEVO client** (can be the merchant wallet).
+1. Sign up at https://wallet.interledger-test.dev (play money). Create a **merchant** and a **buyer** account/wallet address; fund the buyer.
 2. Settings → **Developer Keys** → generate → copy **Key ID**, download `private.key` into `backend/` (gitignored).
-3. `backend/.env`: `OPEN_PAYMENTS_CLIENT_WALLET`, `OPEN_PAYMENTS_KEY_ID`, `OPEN_PAYMENTS_PRIVATE_KEY_PATH=./private.key`, `MERCHANT_WALLET`.
-4. Create a second user (the payer/tourist), ideally with a different currency, and fund it in the test wallet.
-5. `npm run dev:backend` should log `Live Open Payments client`. `GET /api/health` → `mode: 'live'`.
+3. `backend/.env`: `OP_MODE=live`, `OPEN_PAYMENTS_CLIENT_WALLET`, `OPEN_PAYMENTS_KEY_ID`, `OPEN_PAYMENTS_PRIVATE_KEY_PATH=./private.key`, `MERCHANT_WALLET`, `SMOKE_MERCHANT_WALLET`, `SMOKE_BUYER_WALLET`.
+4. `npm run keys:generate --workspace=backend` once (receipt-signing key; live refuses to start without it).
+5. `npm run smoke:live --workspace=backend` → approve the printed URL as the buyer → expect `hash: MATCH` and `RESULT: PASS`.
+6. `npm run dev:backend` logs `MODE: LIVE · Interledger Test Wallet`; `GET /api/health` → `mode: 'live'`.
 
 ## Debugging
 - `OpenPaymentsClientError` → our error handler logs `status`, `description`, `validationErrors` and returns 502 with the description.
 - 401/invalid signature on grant requests → wrong key ID / key file / client wallet does not own the key.
 - Merchant wallet currency must equal `sale.currency` in live mode (backend returns 400 otherwise).
 - Payer approves on the wallet's site, so `PUBLIC_BACKEND_URL` must be reachable from the payer's browser (use a tunnel for phones).
-- Force the demo-safe path with `RELEVO_SIMULATOR=true`.
+- Demo without network: `OP_MODE=simulator` (explicit; live never falls back on its own).
+- `hash: MISMATCH` in the smoke test: keep `STRICT_HASH=false` and compare `computeInteractHash` inputs (the auth server URL with or without a trailing slash).
 
 ## Docs
 - https://openpayments.dev/es/ · SDK: https://openpayments.dev/es/sdk/before-you-begin/
