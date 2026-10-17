@@ -121,7 +121,7 @@ El 2026-10-17 el flujo completo pasó contra la **Interledger Test Wallet** (`OP
 
 Salida completa: [docs/LIVE-TEST-RESULT.md](docs/LIVE-TEST-RESULT.md).
 
-## 🚀 Primeros Pasos (Desarrollo Local)
+## Primeros Pasos (Desarrollo Local)
 
 ### Prerrequisitos
 - Node.js >= 20 (recomendado Node 24)
