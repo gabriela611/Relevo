@@ -129,6 +129,20 @@ export async function computeSha256(text: string): Promise<string> {
 }
 
 /**
+ * RFC 7638 JWK thumbprint (SHA-256, base64url) of an EC public key.
+ * Used as the receipt `keyId`: stable for a given key, different for any other.
+ */
+export async function computeJwkThumbprint(jwk: JsonWebKey): Promise<string> {
+  if (jwk.kty !== 'EC' || !jwk.crv || !jwk.x || !jwk.y) {
+    throw new Error('Se esperaba una llave pública EC (crv, x, y).');
+  }
+  // Required members only, lexicographic order, no whitespace (RFC 7638 §3.2).
+  const canonical = `{"crv":${JSON.stringify(jwk.crv)},"kty":"EC","x":${JSON.stringify(jwk.x)},"y":${JSON.stringify(jwk.y)}}`;
+  const digest = await getSubtle().digest('SHA-256', new TextEncoder().encode(canonical) as unknown as BufferSource);
+  return arrayBufferToBase64Url(digest);
+}
+
+/**
  * Sign UTF-8 data using ECDSA P-256 + SHA-256, returning base64url signature
  */
 export async function signData(data: string, privateKey: CryptoKey): Promise<string> {

@@ -14,7 +14,9 @@
     "dev:frontend": "npm run dev --workspace=frontend",
     "dev:backend": "npm run dev --workspace=backend",
     "build": "npm run build --workspace=shared && npm run build --workspace=backend && npm run build --workspace=frontend",
-    "test": "node --test"
+    "test": "npm run build --workspace=shared && npm run test --workspace=shared && npm run test --workspace=backend",
+    "test:backend": "npm run test --workspace=backend",
+    "typecheck": "npm run build --workspace=shared && npm run typecheck --workspace=shared && npm run typecheck --workspace=backend"
   },
   "engines": {
     "node": ">=20.0.0"

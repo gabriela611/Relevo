@@ -5,15 +5,23 @@
 import {
   PaymentSaleRequest,
   VerifiedReceipt,
+  UnsignedReceipt,
+  ReceiptKeyInfo,
   ReceiptValidationResult,
 } from './types.js';
 import {
   canonicalJson,
   computeSha256,
+  computeJwkThumbprint,
+  importPublicKeyFromJwk,
+  signData,
   verifySignature,
   arrayBufferToBase64Url,
   base64UrlToArrayBuffer,
 } from './crypto.js';
+import { formatAmount, isAtLeast, toMinorUnits } from './amounts.js';
+
+const RECEIPT_QR_PREFIX = 'relevo:receipt:v2:';
 
 /**
  * Format string payload to string using Base64URL
@@ -61,147 +69,205 @@ export function parseSaleFromQr(qrContent: string): PaymentSaleRequest | null {
   return null;
 }
 
+/** Normalizes "$ilp.example/alice", "ilp.example/alice/" etc. to "https://ilp.example/alice". */
+export function normalizeWalletAddress(walletAddress: string): string {
+  let w = walletAddress.trim();
+  if (w.startsWith('$')) w = 'https://' + w.substring(1);
+  else if (!/^https?:\/\//i.test(w)) w = 'https://' + w;
+  return w.replace(/\/+$/, '');
+}
+
+export function sameWalletAddress(a: string, b: string): boolean {
+  return normalizeWalletAddress(a).toLowerCase() === normalizeWalletAddress(b).toLowerCase();
+}
+
 /**
- * Extract canonical digest payload from a receipt
+ * Canonical content covered by the signature. Fields are listed explicitly so
+ * anything extra injected into a QR is ignored rather than trusted.
  */
-export function getReceiptPayloadForSigning(receipt: Omit<VerifiedReceipt, 'backendSignature' | 'payloadDigest'>): string {
+export function getReceiptPayloadForSigning(receipt: UnsignedReceipt): string {
   return canonicalJson({
     version: receipt.version,
     receiptId: receipt.receiptId,
     saleId: receipt.saleId,
-    merchantWalletAddress: receipt.merchantWalletAddress,
-    payerWalletAddress: receipt.payerWalletAddress,
-    amountReceived: receipt.amountReceived,
-    currency: receipt.currency,
-    assetScale: receipt.assetScale,
+    merchantWallet: receipt.merchantWallet,
+    amountReceived: {
+      value: receipt.amountReceived.value,
+      assetCode: receipt.amountReceived.assetCode,
+      assetScale: receipt.amountReceived.assetScale,
+    },
     incomingPaymentId: receipt.incomingPaymentId,
-    outgoingPaymentId: receipt.outgoingPaymentId || '',
-    timestamp: receipt.timestamp,
+    outgoingPaymentId: receipt.outgoingPaymentId,
+    issuedAt: receipt.issuedAt,
+    keyId: receipt.keyId,
+    mode: receipt.mode,
   });
+}
+
+/** Signs a receipt (backend side). Same Web Crypto code path the browser verifies with. */
+export async function signReceipt(unsigned: UnsignedReceipt, privateKey: CryptoKey): Promise<VerifiedReceipt> {
+  const payloadDigest = await computeSha256(getReceiptPayloadForSigning(unsigned));
+  const backendSignature = await signData(payloadDigest, privateKey);
+  return { ...unsigned, payloadDigest, backendSignature };
+}
+
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+
+/** Structural validation of an untrusted object claiming to be a v2 receipt. */
+export function isReceiptV2(value: unknown): value is VerifiedReceipt {
+  const r = value as Partial<VerifiedReceipt> | null;
+  if (!r || typeof r !== 'object' || r.version !== '2') return false;
+  const a = r.amountReceived;
+  return (
+    isStr(r.receiptId) &&
+    isStr(r.saleId) &&
+    isStr(r.merchantWallet) &&
+    !!a &&
+    typeof a.value === 'string' &&
+    /^\d+$/.test(a.value) &&
+    isStr(a.assetCode) &&
+    Number.isInteger(a.assetScale) &&
+    a.assetScale >= 0 &&
+    isStr(r.incomingPaymentId) &&
+    isStr(r.outgoingPaymentId) &&
+    Number.isFinite(r.issuedAt) &&
+    isStr(r.keyId) &&
+    (r.mode === 'live' || r.mode === 'simulator') &&
+    isStr(r.payloadDigest) &&
+    isStr(r.backendSignature)
+  );
 }
 
 /**
  * Encode a VerifiedReceipt into a compact QR payload
  */
 export function encodeReceiptToQr(receipt: VerifiedReceipt): string {
-  const json = JSON.stringify(receipt);
-  return `relevo:receipt:v1:${toBase64UrlString(json)}`;
+  return `${RECEIPT_QR_PREFIX}${toBase64UrlString(JSON.stringify(receipt))}`;
 }
 
 /**
- * Parse a QR code string into a VerifiedReceipt
+ * Parse a QR code string into a VerifiedReceipt (structure only; call verifyReceiptOffline next)
  */
 export function parseReceiptFromQr(qrContent: string): VerifiedReceipt | null {
   try {
     const trimmed = qrContent.trim();
-    if (trimmed.startsWith('relevo:receipt:v1:')) {
-      const b64 = trimmed.substring('relevo:receipt:v1:'.length);
-      const json = fromBase64UrlString(b64);
-      const parsed = JSON.parse(json) as VerifiedReceipt;
-      if (parsed.version === '1' && parsed.receiptId && parsed.saleId && parsed.backendSignature) {
-        return parsed;
-      }
-    }
-    // Fallback: direct JSON
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      const parsed = JSON.parse(trimmed) as VerifiedReceipt;
-      if (parsed.receiptId && parsed.backendSignature) return parsed;
-    }
-  } catch (err) {
-    console.warn('Failed to parse receipt QR payload:', err);
+    let json: string | null = null;
+    if (trimmed.startsWith(RECEIPT_QR_PREFIX)) json = fromBase64UrlString(trimmed.substring(RECEIPT_QR_PREFIX.length));
+    else if (trimmed.startsWith('{') && trimmed.endsWith('}')) json = trimmed;
+    if (!json) return null;
+    const parsed: unknown = JSON.parse(json);
+    return isReceiptV2(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
-  return null;
+}
+
+/** A receipt key pinned on the device, ready for verification. */
+export interface PinnedReceiptKey {
+  keyId: string;
+  publicKey: CryptoKey;
 }
 
 /**
- * Verify a receipt cryptographically and logically against the expected sale
- * Runs completely offline on the merchant device.
+ * Imports the key fetched from GET /api/receipt-key (while online) and checks
+ * that its keyId really is the thumbprint of the JWK, so a corrupted or swapped
+ * pin is detected before it is stored.
+ */
+export async function importPinnedReceiptKey(info: Pick<ReceiptKeyInfo, 'keyId' | 'publicKeyJwk'>): Promise<PinnedReceiptKey> {
+  const thumbprint = await computeJwkThumbprint(info.publicKeyJwk);
+  if (thumbprint !== info.keyId) {
+    throw new Error('El keyId no corresponde a la llave pública recibida.');
+  }
+  return { keyId: info.keyId, publicKey: await importPublicKeyFromJwk(info.publicKeyJwk) };
+}
+
+export interface OfflineVerificationContext {
+  /** Backend key pinned while online. */
+  pinnedKey: PinnedReceiptKey;
+  /** This device's own merchant wallet address. */
+  deviceWallet: string;
+  /** Sales created on THIS device (IndexedDB). Unknown sale ids must return null. */
+  getDeviceSale: (saleId: string) => PaymentSaleRequest | null | undefined | Promise<PaymentSaleRequest | null | undefined>;
+  /** True if this receipt (or its sale) was already redeemed on this device (IndexedDB). */
+  isRedeemed: (receipt: VerifiedReceipt) => boolean | Promise<boolean>;
+}
+
+export const RECEIPT_ERROR_MESSAGES = {
+  INVALID_FORMAT: 'El código escaneado no es un comprobante RELEVO válido.',
+  KEY_MISMATCH: 'Este comercio tiene una llave desactualizada. Conéctate a internet una vez para actualizarla.',
+  INVALID_SIGNATURE: 'Comprobante falso o alterado: la firma no es válida.',
+  UNKNOWN_SALE: 'Este comprobante es de una venta que no se creó en este dispositivo.',
+  ALREADY_REDEEMED: 'Este comprobante ya fue usado.',
+  MERCHANT_MISMATCH: 'Este comprobante es de un pago a otro comercio.',
+  ASSET_MISMATCH: 'El comprobante está en otra moneda distinta a la de la venta.',
+  AMOUNT_INSUFFICIENT: 'El monto recibido es menor al de la venta.',
+} as const;
+
+const fail = (error: keyof typeof RECEIPT_ERROR_MESSAGES, detail?: string): ReceiptValidationResult => ({
+  valid: false,
+  error,
+  message: detail ? `${RECEIPT_ERROR_MESSAGES[error]} ${detail}` : RECEIPT_ERROR_MESSAGES[error],
+});
+
+/**
+ * Verifies a receipt completely offline on the merchant device. Checks run in
+ * this order and the first failure is returned:
+ *  1. INVALID_FORMAT      structure of a v2 receipt
+ *  2. KEY_MISMATCH        receipt.keyId equals the pinned key
+ *  3. INVALID_SIGNATURE   digest recomputed from content + ECDSA signature with the pinned key
+ *  4. UNKNOWN_SALE        saleId was created on this device
+ *  5. ALREADY_REDEEMED    not redeemed before on this device
+ *  6. MERCHANT_MISMATCH   merchantWallet equals this device's wallet
+ *  7. ASSET_MISMATCH      same asset code as the sale
+ *  8. AMOUNT_INSUFFICIENT received >= sale amount (exact, scale-independent)
+ * A valid simulator receipt returns kind SIMULATED_PAYMENT.
  */
 export async function verifyReceiptOffline(
-  receipt: VerifiedReceipt,
-  expectedSale: PaymentSaleRequest,
-  backendPublicKey: CryptoKey,
-  redeemedReceiptIds?: Set<string>
+  receipt: unknown,
+  ctx: OfflineVerificationContext
 ): Promise<ReceiptValidationResult> {
-  // 1. Check double-spending / duplicate replay
-  if (redeemedReceiptIds && redeemedReceiptIds.has(receipt.receiptId)) {
-    return {
-      valid: false,
-      error: 'ALREADY_REDEEMED',
-      message: `El comprobante con ID ${receipt.receiptId} ya fue redimido previamente.`,
-    };
+  if (!isReceiptV2(receipt)) return fail('INVALID_FORMAT');
+
+  if (receipt.keyId !== ctx.pinnedKey.keyId) return fail('KEY_MISMATCH');
+
+  const digest = await computeSha256(getReceiptPayloadForSigning(receipt));
+  if (digest !== receipt.payloadDigest) return fail('INVALID_SIGNATURE');
+  if (!(await verifySignature(digest, receipt.backendSignature, ctx.pinnedKey.publicKey))) {
+    return fail('INVALID_SIGNATURE');
   }
 
-  // 2. Validate sale ID match
-  if (receipt.saleId !== expectedSale.saleId) {
-    return {
-      valid: false,
-      error: 'SALE_ID_MISMATCH',
-      message: `El comprobante corresponde a la venta ${receipt.saleId}, no a la venta actual ${expectedSale.saleId}.`,
-    };
+  const sale = await ctx.getDeviceSale(receipt.saleId);
+  if (!sale || sale.saleId !== receipt.saleId) return fail('UNKNOWN_SALE');
+
+  if (await ctx.isRedeemed(receipt)) return fail('ALREADY_REDEEMED');
+
+  if (!sameWalletAddress(receipt.merchantWallet, ctx.deviceWallet)) return fail('MERCHANT_MISMATCH');
+
+  if (receipt.amountReceived.assetCode.toUpperCase() !== sale.currency.toUpperCase()) {
+    return fail('ASSET_MISMATCH', `Venta en ${sale.currency}, comprobante en ${receipt.amountReceived.assetCode}.`);
   }
 
-  // 3. Validate currency
-  if (receipt.currency.toUpperCase() !== expectedSale.currency.toUpperCase()) {
-    return {
-      valid: false,
-      error: 'CURRENCY_MISMATCH',
-      message: `Divisa incompatible: se esperaba ${expectedSale.currency} y se recibió ${receipt.currency}.`,
-    };
+  let saleMinor: bigint;
+  try {
+    saleMinor = toMinorUnits(sale.amount, sale.assetScale);
+  } catch {
+    return fail('INVALID_FORMAT', 'La venta guardada tiene un monto inválido.');
+  }
+  if (!isAtLeast(receipt.amountReceived, { value: saleMinor.toString(), assetScale: sale.assetScale })) {
+    return fail(
+      'AMOUNT_INSUFFICIENT',
+      `Esperado ${sale.amount} ${sale.currency}, recibido ${formatAmount(receipt.amountReceived)}.`
+    );
   }
 
-  // 4. Validate received amount (must be >= requested amount)
-  const receivedVal = parseFloat(receipt.amountReceived);
-  const expectedVal = parseFloat(expectedSale.amount);
-  if (isNaN(receivedVal) || isNaN(expectedVal) || receivedVal < expectedVal) {
-    return {
-      valid: false,
-      error: 'AMOUNT_MISMATCH',
-      message: `Monto recibido insuficiente: se esperaba ${expectedSale.amount} y se recibió ${receipt.amountReceived}.`,
-    };
-  }
-
-  // 5. Validate merchant wallet address match
-  if (
-    receipt.merchantWalletAddress.toLowerCase() !==
-    expectedSale.merchantWalletAddress.toLowerCase()
-  ) {
-    return {
-      valid: false,
-      error: 'SALE_ID_MISMATCH',
-      message: `La dirección de billetera receptora no coincide con el comercio.`,
-    };
-  }
-
-  // 6. Validate canonical digest matches receipt content
-  const canonicalContent = getReceiptPayloadForSigning(receipt);
-  const computedDigest = await computeSha256(canonicalContent);
-  if (computedDigest !== receipt.payloadDigest) {
-    return {
-      valid: false,
-      error: 'INVALID_SIGNATURE',
-      message: 'El contenido del recibo ha sido alterado o manipulado (falla de integridad SHA-256).',
-    };
-  }
-
-  // 7. Verify ECDSA signature of the digest by backend trusted key
-  const signatureValid = await verifySignature(
-    computedDigest,
-    receipt.backendSignature,
-    backendPublicKey
-  );
-
-  if (!signatureValid) {
-    return {
-      valid: false,
-      error: 'INVALID_SIGNATURE',
-      message: 'Firma criptográfica inválida. El recibo no fue emitido por una entidad autorizada.',
-    };
-  }
-
+  const simulated = receipt.mode === 'simulator';
   return {
     valid: true,
+    kind: simulated ? 'SIMULATED_PAYMENT' : 'LIVE_PAYMENT',
     receipt,
-    reason: 'Comprobante válido y verificado criptográficamente offline.',
+    sale,
+    message: simulated
+      ? `SIMULACIÓN: comprobante de prueba por ${formatAmount(receipt.amountReceived)}. No es dinero real.`
+      : `Pago verificado: ${formatAmount(receipt.amountReceived)} recibidos.`,
   };
 }
