@@ -86,16 +86,16 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
     const sale = normalizeSale(req.body);
     if (typeof sale === 'string') return reply.badRequest(sale);
     dbService.createSale(sale, 'WAITING_PAYMENT');
-    return { success: true, sale: dbService.getSale(sale.saleId) };
+    return { success: true, sale: openPaymentsService.getSale(sale.saleId) };
   });
 
   // 4. List recent sales (merchant dashboard)
-  fastify.get('/api/sales', async () => ({ sales: dbService.listAllSales() }));
+  fastify.get('/api/sales', async () => ({ sales: openPaymentsService.listSales() }));
 
   // 5. Get sale + receipt (frontend polls this for status)
   fastify.get('/api/sales/:saleId', async (req, reply) => {
     const { saleId } = req.params as { saleId: string };
-    const sale = dbService.getSale(saleId);
+    const sale = openPaymentsService.getSale(saleId);
     if (!sale) return reply.notFound(`Venta con ID ${saleId} no encontrada.`);
     return { sale, receipt: dbService.getReceiptBySaleId(saleId) };
   });

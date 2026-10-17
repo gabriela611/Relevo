@@ -26,6 +26,7 @@ export type AuthorizeResult =
   | { requoted: true; quote: CurrencyQuote };
 
 export type CallbackFailureReason =
+  | 'SALE_EXPIRED'
   | 'GRANT_REJECTED'
   | 'MISSING_INTERACT_REF'
   | 'HASH_MISMATCH'
@@ -40,6 +41,8 @@ export interface CallbackOutcome {
 }
 
 const FINAL_SALE_STATES: PaymentState[] = ['PAYMENT_VERIFIED', 'OFFLINE_VERIFIED'];
+/** States that become FAILED_OR_EXPIRED once sale.expiresAt passes. */
+const EXPIRABLE_SALE_STATES: PaymentState[] = ['WAITING_PAYMENT', 'AUTHORIZATION_PENDING', 'PROCESSING'];
 const POLL_INTERVAL_MS = 1000;
 /** Quotes expiring sooner than this are replaced before asking the buyer to consent. */
 export const REQUOTE_MARGIN_MS = 60_000;
@@ -174,6 +177,13 @@ export class OpenPaymentsService {
       return failed('INVALID_STATE', attempt.error ?? `Estado inválido: ${attempt.status}`);
     }
 
+    // Expiry first: never continue a grant or pay for a sale that already expired.
+    if (this.getSale(attempt.saleId)?.status === 'FAILED_OR_EXPIRED') {
+      const error = 'La venta expiró antes de completar el pago. No se cobró nada; pide al comercio una venta nueva.';
+      this.fail(attempt, 'SALE_EXPIRED', error);
+      return failed('SALE_EXPIRED', error);
+    }
+
     if (params.result === 'grant_rejected') {
       const error = 'El comprador rechazó el pago en su billetera.';
       this.fail(attempt, 'GRANT_REJECTED', error);
@@ -247,7 +257,7 @@ export class OpenPaymentsService {
       paymentId: a.id,
       saleId: a.saleId,
       attemptStatus: a.status,
-      saleStatus: dbService.getSale(a.saleId)?.status,
+      saleStatus: this.getSale(a.saleId)?.status,
       error: a.error,
       hashCheck: a.hashCheck,
       redirectUrl: a.status === 'AUTHORIZATION_PENDING' ? a.redirectUrl : undefined,
@@ -362,22 +372,45 @@ export class OpenPaymentsService {
   }
 
   /** Marks the attempt failed as "REASON: message"; the sale itself can still be paid with a new attempt. */
+  /**
+   * Marks the attempt failed as "REASON: message". The sale goes back to
+   * WAITING_PAYMENT so it can be paid with a new attempt, unless it has expired,
+   * in which case it stays (or becomes) FAILED_OR_EXPIRED.
+   */
   private fail(attempt: PaymentAttempt, reason: CallbackFailureReason | 'QUOTE_EXPIRED', error: string): void {
     dbService.updatePayment(attempt.id, { status: 'FAILED', error: `${reason}: ${error}` });
-    const sale = dbService.getSale(attempt.saleId);
-    if (sale && !FINAL_SALE_STATES.includes(sale.status)) {
+    const sale = this.getSale(attempt.saleId);
+    if (sale && !FINAL_SALE_STATES.includes(sale.status) && sale.status !== 'FAILED_OR_EXPIRED') {
       dbService.updateSaleStatus(attempt.saleId, 'WAITING_PAYMENT');
     }
   }
 
-  private requirePayableSale(saleId: string) {
+  /**
+   * Reads a sale, expiring it on read: a sale past expiresAt that was never paid
+   * becomes FAILED_OR_EXPIRED. Paid sales are never touched. (No background sweeper.)
+   */
+  getSale(saleId: string) {
     const sale = dbService.getSale(saleId);
+    return sale ? this.expireIfDue(sale) : null;
+  }
+
+  listSales() {
+    return dbService.listAllSales().map((s) => this.expireIfDue(s));
+  }
+
+  private expireIfDue<T extends { saleId: string; expiresAt: number; status: PaymentState }>(sale: T): T {
+    if (EXPIRABLE_SALE_STATES.includes(sale.status) && sale.expiresAt <= Date.now()) {
+      dbService.updateSaleStatus(sale.saleId, 'FAILED_OR_EXPIRED');
+      return { ...sale, status: 'FAILED_OR_EXPIRED' };
+    }
+    return sale;
+  }
+
+  private requirePayableSale(saleId: string) {
+    const sale = this.getSale(saleId);
     if (!sale) throw new PaymentFlowError(404, 'Venta no encontrada.');
     if (FINAL_SALE_STATES.includes(sale.status)) throw new PaymentFlowError(409, 'Esta venta ya fue pagada.');
-    if (sale.expiresAt <= Date.now()) {
-      dbService.updateSaleStatus(sale.saleId, 'FAILED_OR_EXPIRED');
-      throw new PaymentFlowError(410, 'La venta expiró.');
-    }
+    if (sale.status === 'FAILED_OR_EXPIRED') throw new PaymentFlowError(410, 'La venta expiró.');
     return sale;
   }
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import type { IncomingPaymentStatus, WalletInfo } from '../src/services/gateways/gateway.js';
+import type { IncomingPaymentStatus, PaymentGateway, WalletInfo } from '../src/services/gateways/gateway.js';
 
 // Configure before any backend module reads config.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-test-'));
@@ -382,6 +382,78 @@ test('golden rule: partial payment, wrong currency or a short incoming payment n
     config.verifyTimeoutMs = savedTimeout;
     openPaymentsService.useGateway(new SimulatorGateway());
   }
+});
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test('expiry: GET /api/sales and /api/sales/:id expire unpaid sales on read', async () => {
+  const expired = newSale({ expiresAt: Date.now() - 1000 });
+  const fresh = newSale();
+  await app.inject({ method: 'POST', url: '/api/sales', payload: expired });
+  await app.inject({ method: 'POST', url: '/api/sales', payload: fresh });
+
+  const one = (await app.inject({ method: 'GET', url: `/api/sales/${expired.saleId}` })).json();
+  assert.equal(one.sale.status, 'FAILED_OR_EXPIRED');
+  const { sales } = (await app.inject({ method: 'GET', url: '/api/sales' })).json();
+  const byId = new Map(sales.map((x: { saleId: string; status: string }) => [x.saleId, x.status]));
+  assert.equal(byId.get(expired.saleId), 'FAILED_OR_EXPIRED');
+  assert.equal(byId.get(fresh.saleId), 'WAITING_PAYMENT');
+
+  // Quoting an expired sale: 410, state FAILED_OR_EXPIRED.
+  const q = await app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale: expired, payerWalletAddress: PAYER_EUR } });
+  assert.equal(q.statusCode, 410);
+});
+
+test('expiry: a callback after the sale expired is refused before paying (SALE_EXPIRED)', async () => {
+  const sale = newSale({ expiresAt: Date.now() + 1000 });
+  const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
+  await sleep(1100);
+
+  const cb = await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
+  const loc = new URL(cb.headers.location as string);
+  assert.equal(loc.searchParams.get('payment'), 'failed');
+  assert.equal(loc.searchParams.get('reason'), 'SALE_EXPIRED');
+
+  const status = (await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json();
+  assert.equal(status.attemptStatus, 'FAILED');
+  assert.equal(status.saleStatus, 'FAILED_OR_EXPIRED');
+  assert.equal((await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` })).statusCode, 404);
+});
+
+test('expiry: an attempt that fails after the sale expired keeps FAILED_OR_EXPIRED (not WAITING_PAYMENT)', async () => {
+  class SlowFailure extends SimulatorGateway {
+    override async continueGrantAndPay(): Promise<{ outgoingPaymentId: string }> {
+      await sleep(1100); // the sale expires while the payment is in flight
+      throw new Error('El incoming payment expiró.');
+    }
+  }
+  openPaymentsService.useGateway(new SlowFailure());
+  try {
+    const sale = newSale({ expiresAt: Date.now() + 1000 });
+    const { redirectUrl } = await quoteAndAuthorize(sale);
+    const cb = await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
+    assert.equal(new URL(cb.headers.location as string).searchParams.get('reason'), 'PAYMENT_FAILED');
+    const { sale: stored } = (await app.inject({ method: 'GET', url: `/api/sales/${sale.saleId}` })).json();
+    assert.equal(stored.status, 'FAILED_OR_EXPIRED');
+  } finally {
+    openPaymentsService.useGateway(new SimulatorGateway());
+  }
+});
+
+test('simulator rejects payments to an expired incoming payment', async () => {
+  const sim: PaymentGateway = new SimulatorGateway();
+  const merchant = await sim.resolveWallet(MERCHANT);
+  const payer = await sim.resolveWallet(PAYER_EUR);
+  const { id } = await sim.createIncomingPayment(merchant, { value: '1500', assetCode: 'USD', assetScale: 2 }, new Date(Date.now() + 50), 't');
+  const quote = await sim.createQuote(payer, id);
+  const grant = await sim.requestOutgoingGrant(payer, quote.debitAmount, { uri: 'http://cb.test/x', nonce: 'n' });
+  const interactRef = new URL(grant.redirectUrl).searchParams.get('interact_ref')!;
+  await sleep(80);
+  await assert.rejects(
+    sim.continueGrantAndPay({ payer, continueUri: grant.continueUri, continueToken: grant.continueToken, interactRef, quoteId: quote.id }),
+    /expiró/
+  );
+  assert.equal((await sim.getIncomingPayment(merchant, id)).receivedAmount.value, '0');
 });
 
 test('health exposes the explicit mode', async () => {

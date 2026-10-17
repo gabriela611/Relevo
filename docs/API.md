@@ -32,6 +32,7 @@ GET  /api/receipts/:saleId    -> { receipt }                                    
 
 | `reason` | What happened | UI |
 |---|---|---|
+| `SALE_EXPIRED` | The sale expired before the buyer finished; nothing was charged | "La venta expiró". The merchant must create a new sale |
 | `GRANT_REJECTED` | Buyer pressed reject in their wallet | "Pago rechazado". The sale stays payable: offer to retry |
 | `MISSING_INTERACT_REF` | Wallet came back without confirming | Same as rejected |
 | `HASH_MISMATCH` | Callback failed the security check (only when `STRICT_HASH=true`) | Retry; tell the team |
@@ -101,6 +102,8 @@ A **sale** can have several payment **attempts** (one per quote). They use diffe
 `FAILED_OR_EXPIRED` means the **sale** expired, never that a single attempt failed.
 
 Sale lifecycle: `WAITING_PAYMENT → AUTHORIZATION_PENDING → PROCESSING → PAYMENT_VERIFIED → (merchant scans) OFFLINE_VERIFIED`; any of the first three → `FAILED_OR_EXPIRED` once `sale.expiresAt` passes.
+
+Expiry is applied **on read** (`GET /api/sales`, `GET /api/sales/:id`, `GET /api/payments/:id`) and before every payment step (quote, authorize, callback); there is no background job. If funds that were already in flight do land on the merchant's incoming payment, `verify` still issues the receipt and the sale becomes `PAYMENT_VERIFIED`: received money always wins.
 
 ## Receipt v2 (what the buyer shows as a QR)
 
