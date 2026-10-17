@@ -3,7 +3,7 @@ import { CurrencyQuote, PaymentSaleRequest, PaymentState, VerifiedReceipt } from
 import { backendCrypto } from './cryptoService.js';
 import { dbService, type HashCheck, type PaymentAttempt } from './db.js';
 import { config, type OpMode } from '../config.js';
-import { fromMinorUnits, toMinorUnits } from '@relevo/shared';
+import { effectiveRate, fromMinorUnits, isAtLeast, toMinorUnits } from '@relevo/shared';
 import { computeInteractHash, normalizeWalletAddress, type Amount, type PaymentGateway, type WalletInfo } from './gateways/gateway.js';
 import { LiveOpenPaymentsGateway } from './gateways/live.js';
 import { SimulatorGateway } from './gateways/simulator.js';
@@ -12,7 +12,8 @@ export type { WalletInfo };
 
 /** Error with an HTTP status the API layer can return as-is. */
 export class PaymentFlowError extends Error {
-  constructor(public statusCode: number, message: string) {
+  /** reason: optional machine-readable code returned to the client (e.g. INVALID_SALE_SIGNATURE). */
+  constructor(public statusCode: number, message: string, public reason?: string) {
     super(message);
   }
 }
@@ -26,6 +27,7 @@ export type AuthorizeResult =
   | { requoted: true; quote: CurrencyQuote };
 
 export type CallbackFailureReason =
+  | 'SALE_EXPIRED'
   | 'GRANT_REJECTED'
   | 'MISSING_INTERACT_REF'
   | 'HASH_MISMATCH'
@@ -40,6 +42,8 @@ export interface CallbackOutcome {
 }
 
 const FINAL_SALE_STATES: PaymentState[] = ['PAYMENT_VERIFIED', 'OFFLINE_VERIFIED'];
+/** States that become FAILED_OR_EXPIRED once sale.expiresAt passes. */
+const EXPIRABLE_SALE_STATES: PaymentState[] = ['WAITING_PAYMENT', 'AUTHORIZATION_PENDING', 'PROCESSING'];
 const POLL_INTERVAL_MS = 1000;
 /** Quotes expiring sooner than this are replaced before asking the buyer to consent. */
 export const REQUOTE_MARGIN_MS = 60_000;
@@ -174,6 +178,13 @@ export class OpenPaymentsService {
       return failed('INVALID_STATE', attempt.error ?? `Estado inválido: ${attempt.status}`);
     }
 
+    // Expiry first: never continue a grant or pay for a sale that already expired.
+    if (this.getSale(attempt.saleId)?.status === 'FAILED_OR_EXPIRED') {
+      const error = 'La venta expiró antes de completar el pago. No se cobró nada; pide al comercio una venta nueva.';
+      this.fail(attempt, 'SALE_EXPIRED', error);
+      return failed('SALE_EXPIRED', error);
+    }
+
     if (params.result === 'grant_rejected') {
       const error = 'El comprador rechazó el pago en su billetera.';
       this.fail(attempt, 'GRANT_REJECTED', error);
@@ -236,12 +247,18 @@ export class OpenPaymentsService {
     return run;
   }
 
+  /**
+   * Two separate vocabularies, deliberately named apart:
+   *  - attemptStatus: this payment attempt (QUOTED | AUTHORIZATION_PENDING | PROCESSING | COMPLETED | FAILED)
+   *  - saleStatus: the sale, one of the 6 README states
+   */
   getPaymentStatus(paymentId: string) {
     const a = this.requireAttempt(paymentId);
     return {
       paymentId: a.id,
       saleId: a.saleId,
-      status: a.status,
+      attemptStatus: a.status,
+      saleStatus: this.getSale(a.saleId)?.status,
       error: a.error,
       hashCheck: a.hashCheck,
       redirectUrl: a.status === 'AUTHORIZATION_PENDING' ? a.redirectUrl : undefined,
@@ -261,13 +278,24 @@ export class OpenPaymentsService {
 
     const merchant = await this.resolveWalletAddress(sale.merchantWalletAddress);
     const deadline = Date.now() + timeoutMs;
+    const saleAmount = { value: toMinorUnits(sale.amount, sale.assetScale).toString(), assetScale: sale.assetScale };
 
     while (true) {
       const incoming = await this.gateway.getIncomingPayment(merchant, attempt.incomingPaymentId);
       const expected = incoming.incomingAmount ?? attempt.receiveAmount;
-      const received = BigInt(incoming.receivedAmount.value);
+      const got = incoming.receivedAmount;
 
-      if (received >= BigInt(expected.value) && incoming.receivedAmount.assetCode === expected.assetCode) {
+      // Golden rule, two independent checks; both must hold before anything is signed:
+      // 1. the incoming payment is fully paid (same asset and scale as it requested);
+      const coversIncoming =
+        got.assetCode === expected.assetCode &&
+        got.assetScale === expected.assetScale &&
+        BigInt(got.value) >= BigInt(expected.value);
+      // 2. what arrived covers the SALE itself, in the sale's currency (scale-normalized),
+      //    so a wrong or tampered incoming payment can never produce a receipt.
+      const coversSale = got.assetCode.toUpperCase() === sale.currency.toUpperCase() && isAtLeast(got, saleAmount);
+
+      if (coversIncoming && coversSale) {
         const receipt = await backendCrypto.issueSignedReceipt({
           receiptId: randomUUID(),
           saleId,
@@ -314,9 +342,8 @@ export class OpenPaymentsService {
   private toCurrencyQuote(a: PaymentAttempt): CurrencyQuote {
     const debit = a.debitAmount;
     const receive = a.receiveAmount;
-    const debitUnits = Number(debit.value) / 10 ** debit.assetScale;
-    const receiveUnits = Number(receive.value) / 10 ** receive.assetScale;
-    // Open Payments doesn't itemize fees; we can only derive them when no FX is involved.
+    // Open Payments doesn't itemize fees. Without FX the fee is simply debit - receive;
+    // with FX it is inseparable from the rate, so we report it as included instead of a fake 0.
     const sameAsset = debit.assetCode === receive.assetCode && debit.assetScale === receive.assetScale;
     const feeMinor = sameAsset ? BigInt(debit.value) - BigInt(receive.value) : 0n;
 
@@ -324,12 +351,11 @@ export class OpenPaymentsService {
       quoteId: a.id,
       debitAmount: { value: toDecimal(debit), assetCode: debit.assetCode, assetScale: debit.assetScale },
       receiveAmount: { value: toDecimal(receive), assetCode: receive.assetCode, assetScale: receive.assetScale },
-      estimatedRate: debitUnits > 0 ? Number((receiveUnits / debitUnits).toFixed(6)) : 0,
-      fees: {
-        value: fromMinorUnits(feeMinor > 0n ? feeMinor : 0n, debit.assetScale),
-        assetCode: debit.assetCode,
-        assetScale: debit.assetScale,
-      },
+      effectiveRate: effectiveRate(debit, receive),
+      fees: sameAsset
+        ? { value: fromMinorUnits(feeMinor > 0n ? feeMinor : 0n, debit.assetScale), assetCode: debit.assetCode, assetScale: debit.assetScale }
+        : null,
+      feesIncluded: !sameAsset,
       expiresAt: a.quoteExpiresAt ?? Date.now() + 5 * 60 * 1000,
     };
   }
@@ -347,22 +373,45 @@ export class OpenPaymentsService {
   }
 
   /** Marks the attempt failed as "REASON: message"; the sale itself can still be paid with a new attempt. */
+  /**
+   * Marks the attempt failed as "REASON: message". The sale goes back to
+   * WAITING_PAYMENT so it can be paid with a new attempt, unless it has expired,
+   * in which case it stays (or becomes) FAILED_OR_EXPIRED.
+   */
   private fail(attempt: PaymentAttempt, reason: CallbackFailureReason | 'QUOTE_EXPIRED', error: string): void {
     dbService.updatePayment(attempt.id, { status: 'FAILED', error: `${reason}: ${error}` });
-    const sale = dbService.getSale(attempt.saleId);
-    if (sale && !FINAL_SALE_STATES.includes(sale.status)) {
+    const sale = this.getSale(attempt.saleId);
+    if (sale && !FINAL_SALE_STATES.includes(sale.status) && sale.status !== 'FAILED_OR_EXPIRED') {
       dbService.updateSaleStatus(attempt.saleId, 'WAITING_PAYMENT');
     }
   }
 
-  private requirePayableSale(saleId: string) {
+  /**
+   * Reads a sale, expiring it on read: a sale past expiresAt that was never paid
+   * becomes FAILED_OR_EXPIRED. Paid sales are never touched. (No background sweeper.)
+   */
+  getSale(saleId: string) {
     const sale = dbService.getSale(saleId);
+    return sale ? this.expireIfDue(sale) : null;
+  }
+
+  listSales() {
+    return dbService.listAllSales().map((s) => this.expireIfDue(s));
+  }
+
+  private expireIfDue<T extends { saleId: string; expiresAt: number; status: PaymentState }>(sale: T): T {
+    if (EXPIRABLE_SALE_STATES.includes(sale.status) && sale.expiresAt <= Date.now()) {
+      dbService.updateSaleStatus(sale.saleId, 'FAILED_OR_EXPIRED');
+      return { ...sale, status: 'FAILED_OR_EXPIRED' };
+    }
+    return sale;
+  }
+
+  private requirePayableSale(saleId: string) {
+    const sale = this.getSale(saleId);
     if (!sale) throw new PaymentFlowError(404, 'Venta no encontrada.');
     if (FINAL_SALE_STATES.includes(sale.status)) throw new PaymentFlowError(409, 'Esta venta ya fue pagada.');
-    if (sale.expiresAt <= Date.now()) {
-      dbService.updateSaleStatus(sale.saleId, 'FAILED_OR_EXPIRED');
-      throw new PaymentFlowError(410, 'La venta expiró.');
-    }
+    if (sale.status === 'FAILED_OR_EXPIRED') throw new PaymentFlowError(410, 'La venta expiró.');
     return sale;
   }
 

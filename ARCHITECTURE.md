@@ -92,6 +92,21 @@ Implementados en `verifyReceiptOffline` (`shared/src/qr.ts`), en este orden:
 
 Un recibo válido con `mode: "simulator"` devuelve `kind: 'SIMULATED_PAYMENT'` y la PWA debe mostrarlo como simulación. Detalle y ejemplo de integración en `docs/API.md`.
 
+### 2.5 Venta firmada por el comercio (QR de venta v2)
+- **Llave del dispositivo:** ECDSA P-256 generada con `generateMerchantKeyPair()`, con clave privada **no extraíble**, guardada en IndexedDB. Su huella RFC 7638 es `merchantKeyId`.
+- **Registro:** mientras tiene conexión, el dispositivo registra la llave pública con `POST /api/merchants/register { merchantWallet, publicKeyJwk }`. Solo se aceptan billeteras de `MERCHANT_WALLETS`, y no hay rotación (409).
+- **Firma:** `signSale` firma el SHA-256 del contenido canónico de la venta (todos los campos, incluido `merchantKeyId`), con el mismo esquema que el recibo. El QR es `relevo:sale:v2:<base64url>`.
+- **Verificación en el backend** al cotizar, en `POST /api/sales` y en `/api/sync`, en este orden:
+  1. firma presente;
+  2. formato;
+  3. comercio registrado para `merchantWalletAddress`;
+  4. `merchantKeyId` igual a la llave registrada;
+  5. firma válida;
+  6. `saleId` no reutilizado con otro contenido.
+
+  Un QR alterado para cobrar a otra billetera falla en el paso 3 o 5 antes de crear cualquier pago.
+- **Limitación conocida:** la lista blanca no prueba la propiedad de la billetera. **Siguiente paso:** verificación de propiedad de *wallet address* de Open Payments.
+
 ---
 
 ## 3. Integración con Open Payments e Interledger

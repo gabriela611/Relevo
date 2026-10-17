@@ -11,28 +11,35 @@ export type PaymentState =
   | 'OFFLINE_VERIFIED'       // Merchant scanned & validated ECDSA signature offline
   | 'FAILED_OR_EXPIRED';     // Payment failed, rejected or timed out
 
-export interface MerchantProfile {
-  id: string;
-  name: string;
-  walletAddress: string;      // Open Payments wallet address (e.g., https://ilp.rafiki.money/merchant)
-  publicKeyJwk: JsonWebKey;   // Merchant's public verification key
-  createdAt: number;
+/** A merchant device key registered with the backend (POST /api/merchants/register). */
+export interface MerchantKeyRegistration {
+  merchantWallet: string;     // Open Payments wallet address of the merchant
+  keyId: string;              // RFC 7638 thumbprint of publicKeyJwk
+  publicKeyJwk: JsonWebKey;   // Merchant device's ECDSA P-256 public key
+  registeredAt: number;
 }
 
+/**
+ * Sale v2, created and signed on the merchant device. Every field except
+ * merchantSignature is covered by the signature (see getSalePayloadForSigning).
+ */
 export interface PaymentSaleRequest {
-  version: '1';
-  saleId: string;             // Unique sale identifier (UUID / nano-id)
+  version: '2';
+  saleId: string;             // Unique sale identifier (UUID)
   merchantId: string;
   merchantName: string;
   merchantWalletAddress: string;
-  amount: string;             // Exact amount requested (e.g. "15.00" or raw units with assetScale)
+  amount: string;             // Exact amount requested as a decimal string ("15.00")
   currency: string;           // ISO 4217 code (e.g. USD, EUR, MXN, COP)
   assetScale: number;         // Decimal places (usually 2)
   createdAt: number;          // Unix timestamp in ms
   expiresAt: number;          // Expiration timestamp in ms
   nonce: string;              // Anti-replay random string
-  merchantSignature?: string; // Optional merchant signature
+  merchantKeyId: string;      // RFC 7638 thumbprint of the merchant device key
+  merchantSignature: string;  // ECDSA P-256 / SHA-256, IEEE P1363, base64url
 }
+
+export type UnsignedSale = Omit<PaymentSaleRequest, 'merchantKeyId' | 'merchantSignature'>;
 
 export interface CurrencyQuote {
   quoteId: string;
@@ -46,12 +53,23 @@ export interface CurrencyQuote {
     assetCode: string;
     assetScale: number;
   };
-  estimatedRate: number;      // Exchange rate from buyer currency to merchant currency
+  /**
+   * Merchant currency received per 1 unit of buyer currency debited, as a decimal
+   * string computed with BigInt (truncated to 6 decimals). Includes all fees.
+   */
+  effectiveRate: string;
+  /**
+   * Explicit fee, only for same-currency quotes (debit - receive). null for
+   * cross-currency quotes: Open Payments doesn't itemize fees, they are inside
+   * the rate (see feesIncluded).
+   */
   fees: {
     value: string;
     assetCode: string;
     assetScale: number;
-  };
+  } | null;
+  /** true when fees are embedded in effectiveRate rather than shown in `fees`. */
+  feesIncluded: boolean;
   expiresAt: number;
 }
 

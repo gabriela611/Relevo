@@ -28,7 +28,7 @@ const SIMULATED_FEE = 0.005; // 0.5%
  */
 export class SimulatorGateway implements PaymentGateway {
   readonly mode = 'simulator' as const;
-  private incoming = new Map<string, { incomingAmount: Amount; received: bigint }>();
+  private incoming = new Map<string, { incomingAmount: Amount; received: bigint; expiresAt: number }>();
   private quotes = new Map<string, GatewayQuote & { receiver: string }>();
   private grants = new Map<string, { clientNonce: string; finishNonce: string; finishUri: string; interactRef: string; authServer: string }>();
 
@@ -44,9 +44,9 @@ export class SimulatorGateway implements PaymentGateway {
     };
   }
 
-  async createIncomingPayment(merchant: WalletInfo, incomingAmount: Amount) {
+  async createIncomingPayment(merchant: WalletInfo, incomingAmount: Amount, expiresAt: Date) {
     const id = `${merchant.resourceServer}/incoming-payments/${randomUUID()}`;
-    this.incoming.set(id, { incomingAmount, received: 0n });
+    this.incoming.set(id, { incomingAmount, received: 0n, expiresAt: expiresAt.getTime() });
     return { id };
   }
 
@@ -100,6 +100,8 @@ export class SimulatorGateway implements PaymentGateway {
 
     const incoming = this.incoming.get(quote.receiver);
     if (!incoming) throw new Error('Incoming payment no encontrado (simulador).');
+    // Like a real wallet: an expired incoming payment accepts no more funds.
+    if (incoming.expiresAt <= Date.now()) throw new Error('El incoming payment expiró (simulador).');
     incoming.received += BigInt(quote.receiveAmount.value);
     this.grants.delete(args.continueToken);
 

@@ -1,7 +1,6 @@
 import { buildServer } from './app.js';
 import { config, MODE_LABEL, requireOpMode } from './config.js';
 import { backendCrypto } from './services/cryptoService.js';
-import { dbService } from './services/db.js';
 import { openPaymentsService } from './services/openPayments.js';
 
 async function start() {
@@ -25,14 +24,6 @@ async function start() {
   });
 
   try {
-    dbService.upsertMerchant({
-      id: 'merchant-default',
-      name: config.defaultMerchantName,
-      walletAddress: config.defaultMerchantWallet,
-      publicKeyJwk: backendCrypto.getPublicKeyJwk(),
-      createdAt: Date.now(),
-    });
-
     await fastify.listen({ port: config.port, host: config.host });
     console.log(`\n🚀 RELEVO backend on http://localhost:${config.port}`);
     console.log(`   MODE: ${MODE_LABEL[mode]}\n`);

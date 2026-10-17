@@ -102,7 +102,24 @@ relevo/
 
 ## Stack tecnológico
 
-- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, PWA (Service Worker + IndexedDB).
+| Estado | Descripción |
+| :--- | :--- |
+| **Esperando pago** (`WAITING_PAYMENT`) | Venta creada por el comercio y dinero todavía no recibido. Si un intento de pago es rechazado o falla, la venta **vuelve a este estado** para que el comprador pueda reintentar. |
+| **Autorización pendiente** (`AUTHORIZATION_PENDING`) | El comprador aún debe consentir el pago mediante GNAP. |
+| **Procesando** (`PROCESSING`) | Transferencia iniciada en la red Interledger, pendiente de confirmación. |
+| **Pago verificado** (`PAYMENT_VERIFIED`) | Recepción comprobada por el backend en el proveedor Open Payments. |
+| **Verificado offline** (`OFFLINE_VERIFIED`) | Comprobante firmado validado localmente en el dispositivo del vendedor sin internet. |
+| **Vencida** (`FAILED_OR_EXPIRED`) | La **venta misma** expiró (`expiresAt`) sin pagarse; ya no se puede pagar. Un intento rechazado o fallido no lleva a este estado. |
+
+Cada venta puede tener varios **intentos de pago** con su propio estado (`attemptStatus`: `QUOTED`, `AUTHORIZATION_PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`). La correspondencia con los estados de la venta está en [docs/API.md](docs/API.md#two-status-vocabularies).
+
+> **Regla de Oro de Seguridad:** Nunca debe marcarse una venta como pagada únicamente porque existe una autorización, una captura de pantalla o un recurso marcado como completado sin comprobar su importe realmente recibido.
+
+---
+
+## 🛠️ Stack Tecnológico
+
+- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, PWA (Service Worker + IndexedDB + Web Crypto).
 - **Backend:** Node.js 24, Fastify, `@interledger/open-payments`.
 - **Criptografía:** Web Crypto API nativa, ECDSA (curva P-256 / secp256r1), SHA-256 canónico.
 - **Base de datos:** SQLite en backend e IndexedDB en cliente.
@@ -120,6 +137,12 @@ El 2026-10-17 el flujo completo pasó contra la **Interledger Test Wallet** (`OP
 - Un recibo alterado fue rechazado (`INVALID_SIGNATURE`).
 
 Salida completa: [docs/LIVE-TEST-RESULT.md](docs/LIVE-TEST-RESULT.md).
+
+## Limitaciones conocidas
+
+- **Registro de comercios por lista blanca.** Un dispositivo de comercio registra su llave pública (`POST /api/merchants/register`) solo para billeteras listadas en `MERCHANT_WALLETS`. El primero que registra una billetera de la lista queda como su dueño, y **no hay rotación de llaves**: una llave distinta para la misma billetera recibe 409.
+  **Siguiente paso:** reemplazar la lista blanca por una prueba de propiedad de la billetera mediante la verificación de propiedad de *wallet address* de Open Payments.
+- **Sin barrido en segundo plano.** Las ventas vencidas pasan a `FAILED_OR_EXPIRED` al leerlas o al intentar pagarlas.
 
 ## Primeros Pasos (Desarrollo Local)
 

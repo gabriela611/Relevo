@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toMinorUnits, fromMinorUnits, isAtLeast, formatAmount, isValidDecimalAmount } from '../src/index.js';
+import { toMinorUnits, fromMinorUnits, isAtLeast, formatAmount, isValidDecimalAmount, effectiveRate } from '../src/index.js';
 
 test('decimal <-> minor units are exact', () => {
   assert.equal(toMinorUnits('15.00', 2), 1500n);
@@ -25,4 +25,13 @@ test('isAtLeast compares across scales without floats', () => {
 
 test('formatAmount', () => {
   assert.equal(formatAmount({ value: '1500', assetCode: 'USD', assetScale: 2 }), '15.00 USD');
+});
+
+test('effectiveRate is exact BigInt math across scales', () => {
+  // Live run: 1.90 EUR debited for 1.00 USD received.
+  assert.equal(effectiveRate({ value: '190', assetScale: 2 }, { value: '100', assetScale: 2 }), '0.526315');
+  assert.equal(effectiveRate({ value: '1005', assetScale: 2 }, { value: '1000', assetScale: 2 }), '0.995024');
+  assert.equal(effectiveRate({ value: '100', assetScale: 2 }, { value: '4200', assetScale: 0 }), '4200.000000');
+  assert.equal(effectiveRate({ value: '3', assetScale: 0 }, { value: '1', assetScale: 0 }, 2), '0.33');
+  assert.throws(() => effectiveRate({ value: '0', assetScale: 2 }, { value: '1', assetScale: 2 }));
 });

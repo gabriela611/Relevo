@@ -45,3 +45,20 @@ export function isAtLeast(a: { value: string; assetScale: number }, b: { value: 
 export function formatAmount(a: { value: string; assetCode: string; assetScale: number }): string {
   return `${fromMinorUnits(a.value, a.assetScale)} ${a.assetCode}`;
 }
+
+/**
+ * Units of `receive` per 1 unit of `debit`, as a decimal string truncated to
+ * `decimals` places. Pure BigInt: 1.00 USD for 1.90 EUR -> "0.526315".
+ */
+export function effectiveRate(
+  debit: { value: string; assetScale: number },
+  receive: { value: string; assetScale: number },
+  decimals = 6
+): string {
+  const d = BigInt(debit.value);
+  if (d <= 0n) throw new Error('El monto debitado debe ser positivo.');
+  const scaled =
+    (BigInt(receive.value) * 10n ** BigInt(debit.assetScale) * 10n ** BigInt(decimals)) /
+    (d * 10n ** BigInt(receive.assetScale));
+  return fromMinorUnits(scaled, decimals);
+}
