@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 test('flow 2 (Cobrar): PaymentSaleRequest serializes to QR and round-trips correctly', () => {
   const sale = {
-    version: '1',
+    version: '2',
     saleId: 'sale-test-uuid',
     merchantId: 'merchant-1',
     merchantName: 'Doña Arepas',
@@ -20,10 +20,12 @@ test('flow 2 (Cobrar): PaymentSaleRequest serializes to QR and round-trips corre
     createdAt: Date.now(),
     expiresAt: Date.now() + 900000,
     nonce: 'nonce-123',
+    merchantKeyId: 'k-test',
+    merchantSignature: 's-test',
   }
 
   const qr = encodeSaleToQr(sale)
-  assert.ok(qr.startsWith('relevo:sale:v1:'), 'Sale QR must have relevo:sale:v1: prefix')
+  assert.ok(qr.startsWith('relevo:sale:v2:'), 'Sale QR must have relevo:sale:v2: prefix')
 
   const parsed = parseSaleFromQr(qr)
   assert.ok(parsed, 'Sale QR must parse successfully')

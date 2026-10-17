@@ -211,7 +211,7 @@ export function saveRedeemedReceipt(receipt: VerifiedReceipt): void {
       receiptId: receipt.receiptId,
       status: 'OFFLINE_VERIFIED',
       saleRequest: matchingSale || {
-        version: '1',
+        version: '2',
         saleId: receipt.saleId,
         merchantId: 'merchant-default',
         merchantName: 'Comercio Local',
@@ -222,6 +222,8 @@ export function saveRedeemedReceipt(receipt: VerifiedReceipt): void {
         createdAt: receipt.issuedAt,
         expiresAt: receipt.issuedAt + 900_000,
         nonce: receipt.receiptId,
+        merchantKeyId: 'k-default',
+        merchantSignature: 's-default',
       },
       verifiedReceipt: receipt,
       verifiedAt: Date.now(),

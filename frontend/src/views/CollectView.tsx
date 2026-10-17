@@ -29,7 +29,7 @@ export function CollectView({ onBack, onScanReceipt }: CollectViewProps) {
     if (!num || num <= 0) return
 
     const sale: PaymentSaleRequest = {
-      version: '1',
+      version: '2',
       saleId: crypto.randomUUID(),
       merchantId: 'merchant-relevo-1',
       merchantName: merchant.name,
@@ -40,6 +40,8 @@ export function CollectView({ onBack, onScanReceipt }: CollectViewProps) {
       createdAt: Date.now(),
       expiresAt: Date.now() + 15 * 60 * 1000,
       nonce: Math.random().toString(36).substring(2, 14),
+      merchantKeyId: 'k-device-key',
+      merchantSignature: 's-device-sig',
     }
 
     const qr = encodeSaleToQr(sale)

@@ -44,7 +44,7 @@ export function DemoToolbar({
 
     const merchant = getMerchantProfile()
     const newSale: PaymentSaleRequest = {
-      version: '1',
+      version: '2',
       saleId: `sale-demo-${Date.now().toString(36)}`,
       merchantId: 'merchant-default',
       merchantName: merchant.name || 'Doña Elena - Arepas',
@@ -55,6 +55,8 @@ export function DemoToolbar({
       createdAt: Date.now(),
       expiresAt: Date.now() + 900_000,
       nonce: `nonce-${Date.now()}`,
+      merchantKeyId: 'k-demo',
+      merchantSignature: 's-demo',
     }
     saveSale(newSale)
     return newSale

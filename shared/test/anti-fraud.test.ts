@@ -26,7 +26,7 @@ let rogueKey: CryptoKey;
 let roguePinnedKey: PinnedReceiptKey;
 
 const baseSale: PaymentSaleRequest = {
-  version: '1',
+  version: '2',
   saleId: 'sale-security-101',
   merchantId: 'merchant-dona-elena',
   merchantName: 'Doña Elena - Arepas',
@@ -37,6 +37,8 @@ const baseSale: PaymentSaleRequest = {
   createdAt: 1_700_000_000_000,
   expiresAt: 1_700_000_900_000, // +15 min
   nonce: 'secure-random-nonce-xyz',
+  merchantKeyId: 'k',
+  merchantSignature: 's',
 };
 
 async function createPinnedKeypair(): Promise<{ privateKey: CryptoKey; pinned: PinnedReceiptKey }> {

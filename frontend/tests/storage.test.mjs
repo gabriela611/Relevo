@@ -26,7 +26,7 @@ test('storage: saves sale and retrieves by id without mutating existing sales', 
   const { saveSale, getSale, listSales } = await import('../src/storage.ts')
 
   const sale1 = {
-    version: '1',
+    version: '2',
     saleId: 'sale-test-001',
     merchantId: 'm1',
     merchantName: 'Doña Elena',
@@ -37,6 +37,8 @@ test('storage: saves sale and retrieves by id without mutating existing sales', 
     createdAt: Date.now(),
     expiresAt: Date.now() + 60000,
     nonce: 'nonce-1',
+    merchantKeyId: 'k1',
+    merchantSignature: 's1',
   }
 
   saveSale(sale1)
@@ -82,7 +84,7 @@ test('storage: syncQueue tracks un-synced offline records', async () => {
     saleId: 'sale-offline-404',
     status: 'OFFLINE_VERIFIED',
     saleRequest: {
-      version: '1',
+      version: '2',
       saleId: 'sale-offline-404',
       merchantId: 'm1',
       merchantName: 'Doña Elena',
@@ -93,6 +95,8 @@ test('storage: syncQueue tracks un-synced offline records', async () => {
       createdAt: Date.now(),
       expiresAt: Date.now() + 60000,
       nonce: 'nonce-offline',
+      merchantKeyId: 'k-off',
+      merchantSignature: 's-off',
     },
     syncedWithBackend: false,
   }
