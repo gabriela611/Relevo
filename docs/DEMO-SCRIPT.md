@@ -11,11 +11,13 @@
 ## Lessons learned from the live test
 
 ### Log the buyer in to the test wallet BEFORE opening the consent link
-Open https://wallet.interledger-test.dev and log in as the buyer first, in the same browser, then open the consent (`redirectUrl`) link. If you log in after following the link, the approval doesn't go through cleanly, and you have to start over with a new quote.
+In our runs, the two attempts where the link was opened before logging in returned "Access to the given resource is forbidden". The run where the buyer logged in to the test wallet first, then opened a fresh link once, succeeded.
+
+So: open https://wallet.interledger-test.dev and log in as the buyer in the same browser, then open the consent (`redirectUrl`) link.
 
 ### Open the consent link only once
-Each consent link belongs to one interactive grant and works once. Re-opening it, reloading it, or opening it in a second tab gives **"Access to the given resource is forbidden"**.
+Each consent link belongs to one interactive grant. In our runs, re-opening a link that had already been opened gave **"Access to the given resource is forbidden"**.
 
-If that happens, don't retry the same link. Go back to the PWA and request a new quote (`POST /api/payments/quote` → `authorize`), which creates a fresh grant and a new link. The sale stays payable: failed or abandoned attempts return it to `WAITING_PAYMENT`.
+**Fix: run a new quote, don't reopen the link.** Go back to the PWA and request a new quote (`POST /api/payments/quote` → `authorize`), which creates a fresh grant and a new link. The sale stays payable: failed or abandoned attempts return it to `WAITING_PAYMENT`.
 
 This is also why the backend never retries the consent grant request: every request would start a new interaction for the buyer.
