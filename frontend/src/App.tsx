@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Header,
   BottomNav,
@@ -14,6 +14,7 @@ import {
   VerificationView,
   OnboardingView,
   ScannerModal,
+  ProfileView,
 } from './views'
 import { resolveRoute, type Route } from './model'
 import { es } from './copy'
@@ -38,10 +39,21 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [targetSaleId, setTargetSaleId] = useState<string | undefined>(undefined)
   const [scannerOpen, setScannerOpen] = useState(false)
-
+  const [animateTotal, setAnimateTotal] = useState(false)
+  const prevTotalRef = useRef(0)
 
   const [merchant, setMerchant] = useState(() => getMerchantProfile())
   const verifiedTotal = getVerifiedTotalToday()
+
+  // Trigger animation when total changes
+  useEffect(() => {
+    if (verifiedTotal !== prevTotalRef.current) {
+      setAnimateTotal(true)
+      prevTotalRef.current = verifiedTotal
+      const timer = setTimeout(() => setAnimateTotal(false), 600)
+      return () => clearTimeout(timer)
+    }
+  }, [verifiedTotal])
 
   const recentReceipts = listRedeemedReceipts()
   const recentSales = listSales()
@@ -130,7 +142,9 @@ export default function App() {
                       {merchant.currency}
                     </span>
                   </div>
-                  <span className="text-3xl font-black tracking-tight tabular-nums mt-2">
+                  <span className={`text-3xl font-black tracking-tight tabular-nums mt-2 transition-transform duration-300 ${
+                    animateTotal ? 'animate-verified-pulse' : ''
+                  }`}>
                     {verifiedTotal.toLocaleString('es-CO')} {merchant.currency}
                   </span>
                 </div>
@@ -343,61 +357,10 @@ export default function App() {
 
         {/* VIEW 6: CUENTA & CONFIGURACIÓN */}
         {(route === 'cuenta' || route === 'configurar') && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h1 className="text-2xl font-bold text-[#17151D]">{es.account.title}</h1>
-              <p className="text-sm text-[#6F6B76] mt-1">{es.account.subtitle}</p>
-            </div>
-
-            <WalletCard
-              walletAddress={merchant.walletAddress}
-              currency={merchant.currency}
-              isConfigured={true}
-            />
-
-            <div className="p-5 rounded-2xl bg-[#F9F8FC] border border-[#EAE8EF] flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-[#17151D]">
-                Perfil de cobro en punto de venta
-              </h3>
-              <div className="flex flex-col gap-2">
-                <label htmlFor="m-name" className="text-xs text-[#6F6B76]">Nombre del comercio</label>
-                <input
-                  id="m-name"
-                  type="text"
-                  value={merchant.name}
-                  onChange={(e) => {
-                    const updated = { ...merchant, name: e.target.value }
-                    setMerchant(updated)
-                    saveMerchantProfile(updated)
-                  }}
-                  className="h-10 px-3 rounded-xl border border-[#EAE8EF] bg-white text-xs"
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <label htmlFor="m-wallet" className="text-xs text-[#6F6B76]">Dirección de tu billetera</label>
-                <input
-                  id="m-wallet"
-                  type="url"
-                  value={merchant.walletAddress}
-                  onChange={(e) => {
-                    const updated = { ...merchant, walletAddress: e.target.value }
-                    setMerchant(updated)
-                    saveMerchantProfile(updated)
-                  }}
-                  className="h-10 px-3 rounded-xl border border-[#EAE8EF] bg-white text-xs font-mono"
-                />
-              </div>
-
-            </div>
-
-            <div className="p-5 rounded-2xl bg-[#F0FBD9] border border-[#D5F5A3] flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-[#177454] shrink-0 mt-0.5" />
-              <div className="text-xs text-[#177454] leading-relaxed">
-                <strong>PWA y claves preparadas:</strong> Esta aplicación funciona 100% en modo avión. Puedes generar cobros y verificar recibos firmados sin datos móviles.
-              </div>
-            </div>
-          </div>
+          <ProfileView
+            merchant={merchant}
+            onMerchantChange={setMerchant}
+          />
         )}
       </main>
 

@@ -3,6 +3,23 @@ import type { PaymentSaleRequest, VerifiedReceipt } from '@relevo/shared'
 const SALES_KEY = 'relevo_device_sales'
 const REDEEMED_KEY = 'relevo_redeemed_receipts'
 const MERCHANT_KEY = 'relevo_merchant_profile'
+const ONBOARDING_SEEN_KEY = 'relevo_onboarding_completed'
+
+export function hasSeenOnboarding(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_SEEN_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function setOnboardingSeen(seen = true): void {
+  try {
+    localStorage.setItem(ONBOARDING_SEEN_KEY, String(seen))
+  } catch (err) {
+    console.warn('Failed to save onboarding state:', err)
+  }
+}
 
 
 export interface StoredMerchant {
@@ -10,6 +27,12 @@ export interface StoredMerchant {
   walletAddress: string
   currency: string
   assetScale: number
+  avatar?: string // emoji o URL
+  email?: string
+  phone?: string
+  language?: 'es' | 'en'
+  theme?: 'light' | 'dark' | 'auto'
+  createdAt?: number
 }
 
 export const defaultMerchant: StoredMerchant = {
@@ -17,6 +40,10 @@ export const defaultMerchant: StoredMerchant = {
   walletAddress: '',
   currency: 'COP',
   assetScale: 0,
+  avatar: '🛍️',
+  language: 'es',
+  theme: 'auto',
+  createdAt: Date.now(),
 }
 
 export function getMerchantProfile(): StoredMerchant {
