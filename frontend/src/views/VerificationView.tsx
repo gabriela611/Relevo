@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ArrowLeft, CheckCircle2, ShieldCheck, XCircle, RotateCcw, Home, QrCode } from 'lucide-react'
 import { PrimaryButton, LimeButton } from '../components'
 import { parseReceiptFromQr, type VerifiedReceipt } from '@relevo/shared'
@@ -14,6 +14,24 @@ interface VerificationViewProps {
   onHome: () => void
 }
 
+function parseAndValidateReceipt(
+  text: string,
+  saleId?: string
+): { receipt: VerifiedReceipt | null; error: string | null } {
+  const parsed = parseReceiptFromQr(text)
+  if (!parsed) {
+    return { receipt: null, error: 'El código escaneado no es un comprobante RELEVO válido.' }
+  }
+  if (isReceiptRedeemed(parsed.receiptId)) {
+    return { receipt: null, error: 'Este comprobante ya fue utilizado anteriormente.' }
+  }
+  if (saleId && parsed.saleId !== saleId) {
+    return { receipt: null, error: `El comprobante corresponde a otra venta (ID: ${parsed.saleId.slice(0, 8)}...).` }
+  }
+  saveRedeemedReceipt(parsed)
+  return { receipt: parsed, error: null }
+}
+
 export function VerificationView({
   saleId,
   initialReceiptQr,
@@ -21,47 +39,18 @@ export function VerificationView({
   onNewSale,
   onHome,
 }: VerificationViewProps) {
+  const initialResult = initialReceiptQr ? parseAndValidateReceipt(initialReceiptQr, saleId) : null
   const [scannerOpen, setScannerOpen] = useState(!saleId && !initialReceiptQr)
-  const [verifiedReceipt, setVerifiedReceipt] = useState<VerifiedReceipt | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (initialReceiptQr) {
-      handleScanReceipt(initialReceiptQr)
-    }
-  }, [initialReceiptQr])
+  const [verifiedReceipt, setVerifiedReceipt] = useState<VerifiedReceipt | null>(initialResult?.receipt ?? null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(initialResult?.error ?? null)
 
   const handleScanReceipt = (text: string) => {
-    const parsed = parseReceiptFromQr(text)
-
-    if (!parsed) {
-      setErrorMessage('El código escaneado no es un comprobante RELEVO válido.')
-      setScannerOpen(false)
-      return
-    }
-
-    // Check anti-replay
-    if (isReceiptRedeemed(parsed.receiptId)) {
-      setErrorMessage('Este comprobante ya fue utilizado anteriormente.')
-      setScannerOpen(false)
-      return
-    }
-
-    // Check sale match if provided
-    if (saleId && parsed.saleId !== saleId) {
-      setErrorMessage(`El comprobante corresponde a otra venta (ID: ${parsed.saleId.slice(0, 8)}...).`)
-      setScannerOpen(false)
-      return
-    }
-
-    // Valid offline receipt
-    saveRedeemedReceipt(parsed)
-    setVerifiedReceipt(parsed)
-    setErrorMessage(null)
+    const res = parseAndValidateReceipt(text, saleId)
+    setVerifiedReceipt(res.receipt)
+    setErrorMessage(res.error)
     setScannerOpen(false)
 
-    // Haptic feedback
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    if (res.receipt && typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate([30, 100, 30])
     }
   }
