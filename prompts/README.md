@@ -18,6 +18,8 @@ Aquí se conserva el texto real de las solicitudes de trabajo visibles en esta c
 | 012 | 2026-10-16 | Antigravity (Gemini) | [Refinamiento de logo: R continua sin corte medio](012-brand-refinement-whole-r.md) | Ajuste de la Opción 1 manteniendo la R sólida y continua sin partirla en la mitad |
 | 013 | 2026-10-16 | Antigravity (Gemini) | [Refinamiento de App Icon completo sin anidación](013-app-icon-refinement.md) | Icono de app a sangre completa (512x512) sin simular logo anidado dentro de otro |
 | 014 | 2026-10-16 | Antigravity (Gemini) | [App Icon a sangre, favicon y profesionalización de README](014-app-icon-fullbleed-and-readme.md) | App icon a sangre sin anidación, sincronización en favicon y profesionalización de README sin emojis con tabla de marca |
+| 015 | 2026-10-16 | Claude Code (Opus) | [Perfil y tokens de diseño](015-profile-design-tokens.md) | Rediseño de onboarding/perfil ultra-simplificado para personas mayores |
+| 016 | 2026-10-16 | OpenAI Codex & Antigravity | [Refinamiento UI: carrusel móvil, dock flotante y formateo](016-ui-refinement-and-mobile-desktop.md) | Dock flotante, sangrado lateral móvil, formato de miles y símbolo $, cámara limpia y onboarding inicial |
 
 
 

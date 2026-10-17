@@ -40,13 +40,13 @@ test('spanish text catalog has complete navigation, actions and honest financial
   assert.equal(es.navigation.inicio, 'Inicio')
   assert.equal(es.navigation.movimientos, 'Movimientos')
   assert.equal(es.navigation.escanear, 'Escanear')
-  assert.equal(es.navigation.cuenta, 'Cuenta')
+  assert.equal(es.navigation.cuenta, 'Tu cuenta')
   assert.equal(es.actions.collect, 'Cobrar')
   assert.equal(es.actions.pay, 'Pagar')
   
   // Non-alarmist, honest messaging (S4)
   assert.ok(es.collect.prerequisite.length > 0)
-  assert.ok(es.home.noBalance.includes('no el saldo de tu banco'))
+  assert.ok(es.home.noBalance.includes('no es el saldo de tu banco'))
 })
 
 test('component barrel index exports all design system elements', () => {

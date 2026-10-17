@@ -3,20 +3,43 @@ import type { PaymentSaleRequest, VerifiedReceipt } from '@relevo/shared'
 const SALES_KEY = 'relevo_device_sales'
 const REDEEMED_KEY = 'relevo_redeemed_receipts'
 const MERCHANT_KEY = 'relevo_merchant_profile'
+const ONBOARDING_SEEN_KEY = 'relevo_onboarding_completed'
+
+export function hasSeenOnboarding(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_SEEN_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function setOnboardingSeen(seen = true): void {
+  try {
+    localStorage.setItem(ONBOARDING_SEEN_KEY, String(seen))
+  } catch (err) {
+    console.warn('Failed to save onboarding state:', err)
+  }
+}
 
 
 export interface StoredMerchant {
+  // Solo lo esencial que el usuario ve/controla
   name: string
-  walletAddress: string
   currency: string
-  assetScale: number
+  language?: 'es' | 'en'
+
+  // Datos técnicos (opaco al usuario, manejados por backend)
+  walletAddress?: string
+  assetScale?: number
+  createdAt?: number
 }
 
 export const defaultMerchant: StoredMerchant = {
-  name: 'Doña Arepas',
-  walletAddress: '',
+  name: '',
   currency: 'COP',
+  language: 'es',
   assetScale: 0,
+  createdAt: Date.now(),
 }
 
 export function getMerchantProfile(): StoredMerchant {

@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Header,
   BottomNav,
   IconAction,
-  WalletCard,
   TransactionRow,
   EmptyState,
   OfflineBanner,
@@ -14,8 +13,9 @@ import {
   VerificationView,
   OnboardingView,
   ScannerModal,
+  ProfileView,
 } from './views'
-import { resolveRoute, type Route } from './model'
+import { resolveRoute, formatAmountInput, formatMinorUnits, currencySymbol, formatReceivedToday, type Route } from './model'
 import { es } from './copy'
 import {
   QrCode,
@@ -29,7 +29,8 @@ import {
   getVerifiedTotalToday,
   listRedeemedReceipts,
   listSales,
-  saveMerchantProfile,
+  hasSeenOnboarding,
+  setOnboardingSeen,
 } from './storage'
 import './App.css'
 
@@ -38,10 +39,22 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [targetSaleId, setTargetSaleId] = useState<string | undefined>(undefined)
   const [scannerOpen, setScannerOpen] = useState(false)
-
+  const [animateTotal, setAnimateTotal] = useState(false)
+  const [hasSeenWelcome, setHasSeenWelcome] = useState(() => hasSeenOnboarding())
+  const prevTotalRef = useRef(0)
 
   const [merchant, setMerchant] = useState(() => getMerchantProfile())
   const verifiedTotal = getVerifiedTotalToday()
+
+  // Trigger animation when total changes
+  useEffect(() => {
+    if (verifiedTotal !== prevTotalRef.current) {
+      setAnimateTotal(true)
+      prevTotalRef.current = verifiedTotal
+      const timer = setTimeout(() => setAnimateTotal(false), 600)
+      return () => clearTimeout(timer)
+    }
+  }, [verifiedTotal])
 
   const recentReceipts = listRedeemedReceipts()
   const recentSales = listSales()
@@ -79,9 +92,17 @@ export default function App() {
     }
   }
 
-  // If user is on bienvenida route
-  if (route === 'bienvenida') {
-    return <OnboardingView onStart={() => navigateTo('inicio')} />
+  // First-time onboarding or explicit bienvenida route
+  if (!hasSeenWelcome || route === 'bienvenida') {
+    return (
+      <OnboardingView
+        onStart={() => {
+          setOnboardingSeen(true)
+          setHasSeenWelcome(true)
+          navigateTo('inicio')
+        }}
+      />
+    )
   }
 
   return (
@@ -92,7 +113,7 @@ export default function App() {
         isOnline={isOnline}
       />
 
-        <main className="screen-enter flex-1 pb-24 px-5 pt-4">
+      <main className="app-content flex-1">
         {/* VIEW 1: HOME */}
         {route === 'inicio' && (
           <div className="flex flex-col gap-6">
@@ -118,9 +139,9 @@ export default function App() {
             </div>
 
             {/* Horizontal Hero Cards (Inspired by middle phone in reference image) */}
-            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none snap-x">
+            <div className="-mr-5 pr-5 flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x sm:mr-0 sm:pr-0 sm:grid sm:grid-cols-2">
               {/* Card 1: Verified Total Today (Lime / Forest Green) */}
-              <div className="min-w-[270px] flex-1 p-5 rounded-[24px] bg-[#CFFA86] text-[#260F61] card-shadow relative overflow-hidden snap-start flex flex-col justify-between h-38">
+              <div className="min-w-[270px] sm:min-w-0 flex-1 p-5 rounded-[24px] bg-[#CFFA86] text-[#260F61] card-shadow relative overflow-hidden snap-start flex flex-col justify-between min-h-[164px]">
                 <div className="relative z-10 flex flex-col">
                   <div className="flex items-center justify-between">
                     <span className="text-xs uppercase tracking-wider font-extrabold opacity-80">
@@ -130,8 +151,11 @@ export default function App() {
                       {merchant.currency}
                     </span>
                   </div>
-                  <span className="text-3xl font-black tracking-tight tabular-nums mt-2">
-                    {verifiedTotal.toLocaleString('es-CO')} {merchant.currency}
+                  <span className={`text-3xl font-black tracking-tight tabular-nums mt-2 transition-transform duration-300 ${
+                    animateTotal ? 'animate-verified-pulse' : ''
+                  }`}>
+                    <span className="amount-symbol text-2xl font-bold">{currencySymbol(merchant.currency)} </span>
+                    {formatReceivedToday(recentReceipts, merchant.currency)}
                   </span>
                 </div>
 
@@ -147,7 +171,7 @@ export default function App() {
               </div>
 
               {/* Card 2: Offline Readiness (Forest Green & Lime) */}
-              <div className="min-w-[240px] p-5 rounded-[24px] bg-[#174F3A] text-white card-shadow relative overflow-hidden snap-start flex flex-col justify-between h-38">
+              <div className="min-w-[240px] sm:min-w-0 p-5 rounded-[24px] bg-[#174F3A] text-white card-shadow relative overflow-hidden snap-start flex flex-col justify-between min-h-[164px]">
                 <div className="relative z-10 flex flex-col">
                   <div className="flex items-center justify-between">
                     <span className="text-xs uppercase tracking-wider font-bold text-[#CFFA86]">
@@ -230,7 +254,7 @@ export default function App() {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                      formattedAmount={r.amountReceived.value}
+                      formattedAmount={formatMinorUnits(r.amountReceived.value, r.amountReceived.assetScale)}
                       currency={r.amountReceived.assetCode}
                       statusLabel="Verificado offline"
                       statusTone="success"
@@ -249,7 +273,7 @@ export default function App() {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                      formattedAmount={s.amount}
+                      formattedAmount={formatAmountInput(s.amount)}
                       currency={s.currency}
                       statusLabel="Esperando pago"
                       statusTone="warning"
@@ -321,7 +345,7 @@ export default function App() {
                     id={r.receiptId}
                     title={`Venta #${r.saleId.slice(0, 8)}`}
                     date={new Date(r.issuedAt).toLocaleString('es-CO')}
-                    formattedAmount={r.amountReceived.value}
+                    formattedAmount={formatMinorUnits(r.amountReceived.value, r.amountReceived.assetScale)}
                     currency={r.amountReceived.assetCode}
                     statusLabel="Verificado offline"
                     statusTone="success"
@@ -343,61 +367,10 @@ export default function App() {
 
         {/* VIEW 6: CUENTA & CONFIGURACIÓN */}
         {(route === 'cuenta' || route === 'configurar') && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h1 className="text-2xl font-bold text-[#17151D]">{es.account.title}</h1>
-              <p className="text-sm text-[#6F6B76] mt-1">{es.account.subtitle}</p>
-            </div>
-
-            <WalletCard
-              walletAddress={merchant.walletAddress}
-              currency={merchant.currency}
-              isConfigured={true}
-            />
-
-            <div className="p-5 rounded-2xl bg-[#F9F8FC] border border-[#EAE8EF] flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-[#17151D]">
-                Perfil de cobro en punto de venta
-              </h3>
-              <div className="flex flex-col gap-2">
-                <label htmlFor="m-name" className="text-xs text-[#6F6B76]">Nombre del comercio</label>
-                <input
-                  id="m-name"
-                  type="text"
-                  value={merchant.name}
-                  onChange={(e) => {
-                    const updated = { ...merchant, name: e.target.value }
-                    setMerchant(updated)
-                    saveMerchantProfile(updated)
-                  }}
-                  className="h-10 px-3 rounded-xl border border-[#EAE8EF] bg-white text-xs"
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <label htmlFor="m-wallet" className="text-xs text-[#6F6B76]">Dirección de tu billetera</label>
-                <input
-                  id="m-wallet"
-                  type="url"
-                  value={merchant.walletAddress}
-                  onChange={(e) => {
-                    const updated = { ...merchant, walletAddress: e.target.value }
-                    setMerchant(updated)
-                    saveMerchantProfile(updated)
-                  }}
-                  className="h-10 px-3 rounded-xl border border-[#EAE8EF] bg-white text-xs font-mono"
-                />
-              </div>
-
-            </div>
-
-            <div className="p-5 rounded-2xl bg-[#F0FBD9] border border-[#D5F5A3] flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-[#177454] shrink-0 mt-0.5" />
-              <div className="text-xs text-[#177454] leading-relaxed">
-                <strong>PWA y claves preparadas:</strong> Esta aplicación funciona 100% en modo avión. Puedes generar cobros y verificar recibos firmados sin datos móviles.
-              </div>
-            </div>
-          </div>
+          <ProfileView
+            merchant={merchant}
+            onMerchantChange={setMerchant}
+          />
         )}
       </main>
 
