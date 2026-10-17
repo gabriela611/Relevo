@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, CheckCircle2, ShieldCheck, XCircle, RotateCcw, Home, QrCode } from 'lucide-react'
 import { PrimaryButton, LimeButton } from '../components'
 import { parseReceiptFromQr, type VerifiedReceipt } from '@relevo/shared'
@@ -8,6 +8,7 @@ import { ScannerModal } from './ScannerModal'
 
 interface VerificationViewProps {
   saleId?: string
+  initialReceiptQr?: string
   onBack: () => void
   onNewSale: () => void
   onHome: () => void
@@ -15,13 +16,20 @@ interface VerificationViewProps {
 
 export function VerificationView({
   saleId,
+  initialReceiptQr,
   onBack,
   onNewSale,
   onHome,
 }: VerificationViewProps) {
-  const [scannerOpen, setScannerOpen] = useState(!saleId ? true : true)
+  const [scannerOpen, setScannerOpen] = useState(!saleId && !initialReceiptQr)
   const [verifiedReceipt, setVerifiedReceipt] = useState<VerifiedReceipt | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (initialReceiptQr) {
+      handleScanReceipt(initialReceiptQr)
+    }
+  }, [initialReceiptQr])
 
   const handleScanReceipt = (text: string) => {
     const parsed = parseReceiptFromQr(text)
