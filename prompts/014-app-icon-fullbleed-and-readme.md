@@ -1,0 +1,1 @@
+no, no itene suq ehace otra version del logo solo acomodar diferente el icon app, ya elegimos cual queremos no es necesario generar más versiones, ponla y ponla en el favicon, en todas las versionesd e este y en el readme, aprovecha profesionaliza el readme quita los emojies y haz una tabla con el logo y resumen de lo que es

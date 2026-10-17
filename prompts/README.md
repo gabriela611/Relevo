@@ -7,6 +7,22 @@ Aquí se conserva el texto real de las solicitudes de trabajo visibles en esta c
 | 001 | 2026-10-16 | OpenAI Codex | [Brief del MVP](001-mvp-brief.md) | Contexto del producto; no demuestra implementación |
 | 002 | 2026-10-16 | OpenAI Codex | [Reparación de memoria](002-memory-repair.md) | Configuración local de Engram y comprobación de guardado |
 | 003 | 2026-10-16 | OpenAI Codex | [Estructura y seguimiento](003-project-structure.md) | Documentación, registro de IA y tablero ODD |
+| 004 | 2026-10-16 | Antigravity (Gemini) | [Diseño frontend y UX](004-frontend-design.md) | Sistema visual, UX y contratos del modelo de datos de frontend |
+| 005 | 2026-10-16 | Antigravity (Gemini) | [Sincronización con main](005-sync-main.md) | Fetch upstream, actualización de main y rebase de feat/frontend-design-system |
+| 006 | 2026-10-16 | Antigravity (Gemini) | [Organización de docs y ODD](006-organize-docs-and-start-odd.md) | Organización de AI_USAGE, registro de prompts y ejecución del ODD T1 |
+| 007 | 2026-10-16 | Antigravity (Gemini) | [Flujos principales y PWA](007-main-flows-and-pwa.md) | Flujos Cobrar, Pagar, Verificación exitosa, PWA y caché offline |
+| 008 | 2026-10-16 | OpenAI Codex | [Plan responsive, organización y Open Payments](008-responsive-plan-and-open-payments.md) | Actualización del plan ODD, estructura objetivo del frontend, división CSS y frontera con el contrato Open Payments |
+| 009 | 2026-10-16 | OpenAI Codex | [Instalación de Impeccable](009-install-impeccable.md) | Instalación de `impeccable@4.6.0` en `.claude` del proyecto |
+| 010 | 2026-10-16 | OpenAI Codex | [Auditoría Impeccable del frontend](010-impeccable-frontend-audit.md) | Auditoría y simplificación de UX, QR, importes, estados de pago y responsive |
+| 011 | 2026-10-16 | Antigravity (Gemini) | [Branding: fusión fondo A + R de B](011-brand-logo-and-icons.md) | Fusión en SVG del fondo de A y la R de B de round 1: logo, app icon, favicon y branding |
+| 012 | 2026-10-16 | Antigravity (Gemini) | [Refinamiento de logo: R continua sin corte medio](012-brand-refinement-whole-r.md) | Ajuste de la Opción 1 manteniendo la R sólida y continua sin partirla en la mitad |
+| 013 | 2026-10-16 | Antigravity (Gemini) | [Refinamiento de App Icon completo sin anidación](013-app-icon-refinement.md) | Icono de app a sangre completa (512x512) sin simular logo anidado dentro de otro |
+| 014 | 2026-10-16 | Antigravity (Gemini) | [App Icon a sangre, favicon y profesionalización de README](014-app-icon-fullbleed-and-readme.md) | App icon a sangre sin anidación, sincronización en favicon y profesionalización de README sin emojis con tabla de marca |
+| 015 | 2026-10-16 | Claude Code (Opus) | [Perfil y tokens de diseño](015-profile-design-tokens.md) | Rediseño de onboarding/perfil ultra-simplificado para personas mayores |
+| 016 | 2026-10-16 | OpenAI Codex & Antigravity | [Refinamiento UI: carrusel móvil, dock flotante y formateo](016-ui-refinement-and-mobile-desktop.md) | Dock flotante, sangrado lateral móvil, formato de miles y símbolo $, cámara limpia y onboarding inicial |
+
+
+
 
 ## Cómo continuar
 
