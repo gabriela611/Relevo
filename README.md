@@ -2,6 +2,17 @@
 
 **Pay across currencies. Verify without internet.**
 
+## Estado y seguimiento
+
+Existe una base de código con `frontend/`, `backend/` y `shared/`. Los flujos descritos abajo son el objetivo del MVP: esta preparación documental no ha verificado todavía pagos reales, funcionamiento offline ni reconciliación.
+
+- [Progreso ODD y próximos hitos](odd/tasks/mvp.md)
+- [Estructura y ciclo de trabajo](odd/README.md)
+- [Registro de prompts reales](prompts/README.md)
+- [Uso de IA y datos pendientes de completar](AI_USAGE.md)
+
+**Primero:** demostrar un pago de punta a punta entre test wallets. Después, el QR offline. El comprador y el servidor necesitan internet; la firma acredita lo verificado por Relevo en ese momento, no una garantía bancaria permanente.
+
 **Tipo:** PWA Fintech · Open Payments / Interledger  
 **Etapa:** MVP para Hackatón  
 **Usuarios:** Pequeños comerciantes, vendedores informales, turistas y personas con conectividad limitada.
@@ -75,7 +86,7 @@ sequenceDiagram
     Comprador->>Comprador: 10. Muestra QR del Comprobante Verificable
     Vendedor->>Comprador: 11. Escanea el QR del Comprobante
     Vendedor->>Vendedor: 12. Valida criptográficamente offline (ID venta, importe, divisa y firma ECDSA)
-    Note over Vendedor: ¡Pago verificado con certeza matemática sin conexión!
+    Note over Vendedor: Firma y datos del recibo validados localmente; conciliación posterior
 ```
 
 ---

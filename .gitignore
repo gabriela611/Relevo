@@ -2,6 +2,9 @@
 node_modules/
 .pnpm-store/
 
+# Local code intelligence index
+.codegraph/
+
 # Build artifacts
 dist/
 build/
