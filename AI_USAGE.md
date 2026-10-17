@@ -53,3 +53,9 @@ El usuario aportó el brief, las restricciones y las solicitudes registradas en 
 - [ ] Revisar, comprender y probar el código asistido; registrar evidencia en ODD.
 
 Los [prompts reales disponibles](prompts/README.md) y el [seguimiento del MVP](odd/tasks/mvp.md) son los registros asociados. Esta declaración sigue la [política oficial de IA](https://interledger.org/hackathon/ai-policy/), consultada el 2026-10-16; los pendientes anteriores impiden declarar cumplimiento completo.
+
+## Sesión red-team: Rediseño ultra-simplificado para personas mayores
+
+| Herramienta | Uso | Archivos / componentes | Validación |
+| --- | --- | --- | --- |
+| Claude Code (claude-opus-5-5) | Rediseño radical del flujo de registro y perfil: billetera **transparente** (backend-managed, no manual), UI ultra-simplificada para personas mayores, Apple Design limpio sin gradientes complicados | `frontend/src/storage.ts` (StoredMerchant simplificado a {name, currency, language}), `frontend/src/views/OnboardingView.tsx` (2 pasos: intro hero + registro nombre/moneda/idioma), `frontend/src/views/ProfileView.tsx` (display/edit mode limpio), `design.md` (verificación), `odd/tasks/profile-design-system.md` | Verificación: `npm run typecheck` (0 errores), build Vite limpio, modelado sin billetera manual, storage simplificado, OnboardingView + ProfileView sin emojis ni selectores complejos, fonts grandes para personas mayores, contraste alto |

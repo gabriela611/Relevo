@@ -23,26 +23,22 @@ export function setOnboardingSeen(seen = true): void {
 
 
 export interface StoredMerchant {
+  // Solo lo esencial que el usuario ve/controla
   name: string
-  walletAddress: string
   currency: string
-  assetScale: number
-  avatar?: string // emoji o URL
-  email?: string
-  phone?: string
   language?: 'es' | 'en'
-  theme?: 'light' | 'dark' | 'auto'
+
+  // Datos técnicos (opaco al usuario, manejados por backend)
+  walletAddress?: string
+  assetScale?: number
   createdAt?: number
 }
 
 export const defaultMerchant: StoredMerchant = {
-  name: 'Doña Arepas',
-  walletAddress: '',
+  name: '',
   currency: 'COP',
-  assetScale: 0,
-  avatar: '🛍️',
   language: 'es',
-  theme: 'auto',
+  assetScale: 0,
   createdAt: Date.now(),
 }
 
