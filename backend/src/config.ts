@@ -37,6 +37,8 @@ export interface ServerConfig {
   };
   /** How long to poll the incoming payment for funds after creating the outgoing payment. */
   verifyTimeoutMs: number;
+  /** Per-request HTTP timeout for the Open Payments SDK (SDK default is only 5000 ms). */
+  opRequestTimeoutMs: number;
   /**
    * GNAP interaction hash on the callback. false (default): log a warning on
    * mismatch and continue. true: reject the callback. Flip to true only after a
@@ -74,6 +76,7 @@ export const config: ServerConfig = {
     privateKey: process.env.OPEN_PAYMENTS_PRIVATE_KEY_PATH || process.env.OPEN_PAYMENTS_PRIVATE_KEY || '',
   },
   verifyTimeoutMs: parseInt(process.env.VERIFY_TIMEOUT_MS || '15000', 10),
+  opRequestTimeoutMs: parseInt(process.env.OP_REQUEST_TIMEOUT_MS || '20000', 10),
   strictHash: process.env.STRICT_HASH === 'true',
 };
 
