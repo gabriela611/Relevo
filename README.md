@@ -64,33 +64,6 @@ relevo/
 
 ---
 
-## 🔐 Protocolo de Verificación Offline
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Vendedor as Comercio (Sin Internet)
-    actor Comprador as Comprador (Con Internet)
-    participant Backend as Backend RELEVO / Open Payments
-    participant ILP as Interledger Test Wallet
-
-    Vendedor->>Vendedor: 1. Introduce importe y genera QR de venta firmado localmente
-    Comprador->>Vendedor: 2. Escanea QR de venta del comercio
-    Comprador->>Backend: 3. Solicita cotización multidivisa (ej: Paga EUR, Comercio recibe USD)
-    Backend-->>Comprador: 4. Muestra desglose de conversión y comisiones
-    Comprador->>Backend: 5. Autoriza pago vía Open Payments (GNAP)
-    Backend->>ILP: 6. Ejecuta Outgoing Payment hacia Incoming Payment del comercio
-    ILP-->>Backend: 7. Confirma recepción de fondos (verificación estricta de saldo recibido)
-    Backend->>Backend: 8. Firma digitalmente el comprobante con clave privada ECDSA P-256
-    Backend-->>Comprador: 9. Emite Comprobante Verificable
-    Comprador->>Comprador: 10. Muestra QR del Comprobante Verificable
-    Vendedor->>Comprador: 11. Escanea el QR del Comprobante
-    Vendedor->>Vendedor: 12. Valida criptográficamente offline (ID venta, importe, divisa y firma ECDSA)
-    Note over Vendedor: Firma y datos del recibo validados localmente; conciliación posterior
-```
-
----
-
 ## 📊 Estados del Pago
 
 | Estado | Descripción |
