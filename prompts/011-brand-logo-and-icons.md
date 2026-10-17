@@ -1,0 +1,1 @@
+en /brand claude ha praprado unos logos, me gusta del roaund 1 elfondo y de round 1 la R de la b entonces implemente mezcla esos dos en svg haz logo, icono de la app, faivcon y todo el branding necesario

@@ -1,0 +1,25 @@
+{
+  "short_name": "Relevo",
+  "name": "Relevo — Pagos multidivisa y verificación sin internet",
+  "description": "Cobra en cualquier moneda. Comprueba sin internet con Open Payments.",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app-icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#260F61",
+  "theme_color": "#260F61",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/"
+}
