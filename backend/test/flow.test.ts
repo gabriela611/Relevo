@@ -99,6 +99,11 @@ test('full flow: quote -> authorize -> callback issues a receipt that verifies o
   assert.equal(quote.receiveAmount.value, '15.00');
   assert.equal(quote.receiveAmount.assetCode, 'USD');
   assert.equal(quote.debitAmount.assetCode, 'EUR');
+  // Cross-currency: fees live inside the rate, never a fake 0.00.
+  assert.equal(quote.fees, null);
+  assert.equal(quote.feesIncluded, true);
+  assert.match(quote.effectiveRate, /^\d+\.\d{6}$/);
+  assert.equal('estimatedRate' in quote, false);
   assert.ok(redirectUrl.startsWith('http://backend.test/api/payments/callback'));
 
   const cb = await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
@@ -123,6 +128,21 @@ test('full flow: quote -> authorize -> callback issues a receipt that verifies o
   // A paid sale cannot be quoted again.
   const requote = await app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale, payerWalletAddress: PAYER_EUR } });
   assert.equal(requote.statusCode, 409);
+});
+
+test('same-currency quote keeps an explicit fee', async () => {
+  const sale = newSale();
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/payments/quote',
+    payload: { sale, payerWalletAddress: 'https://ilp.interledger-test.dev/vecino-usd' },
+  });
+  const { quote } = res.json();
+  assert.equal(quote.debitAmount.assetCode, 'USD');
+  assert.equal(quote.feesIncluded, false);
+  // Simulator: 15.00 * 1.005 rounded up = 15.08 -> fee 0.08 USD
+  assert.deepEqual(quote.fees, { value: '0.08', assetCode: 'USD', assetScale: 2 });
+  assert.equal(quote.effectiveRate, '0.994694');
 });
 
 test('interop: backend receipt -> QR -> shared parse -> verify with only the pinned public key', async () => {

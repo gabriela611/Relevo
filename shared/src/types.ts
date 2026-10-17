@@ -46,12 +46,23 @@ export interface CurrencyQuote {
     assetCode: string;
     assetScale: number;
   };
-  estimatedRate: number;      // Exchange rate from buyer currency to merchant currency
+  /**
+   * Merchant currency received per 1 unit of buyer currency debited, as a decimal
+   * string computed with BigInt (truncated to 6 decimals). Includes all fees.
+   */
+  effectiveRate: string;
+  /**
+   * Explicit fee, only for same-currency quotes (debit - receive). null for
+   * cross-currency quotes: Open Payments doesn't itemize fees, they are inside
+   * the rate (see feesIncluded).
+   */
   fees: {
     value: string;
     assetCode: string;
     assetScale: number;
-  };
+  } | null;
+  /** true when fees are embedded in effectiveRate rather than shown in `fees`. */
+  feesIncluded: boolean;
   expiresAt: number;
 }
 

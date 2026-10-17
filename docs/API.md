@@ -40,6 +40,28 @@ GET  /api/receipts/:saleId    -> { receipt }                                    
 
 In simulator mode, `redirectUrl` points straight back to the callback, so the same frontend code works without a wallet.
 
+## Quote breakdown (`CurrencyQuote`)
+
+```ts
+{
+  quoteId,
+  debitAmount:   { value: '1.90', assetCode: 'EUR', assetScale: 2 },  // what the buyer pays
+  receiveAmount: { value: '1.00', assetCode: 'USD', assetScale: 2 },  // what the merchant receives (exactly the sale amount)
+  effectiveRate: '0.526315',   // receive per 1 unit of debit, decimal string (BigInt, truncated to 6 decimals), fees included
+  fees: null,                  // cross-currency: null. Same currency: { value, assetCode, assetScale } = debit - receive
+  feesIncluded: true,          // true when fees are inside effectiveRate (cross-currency)
+  expiresAt                    // unix ms
+}
+```
+
+Open Payments doesn't itemize fees. For cross-currency quotes they can't be separated from the exchange rate, so the API returns `fees: null` instead of a misleading `0.00`.
+
+UI copy:
+- **Cross-currency** (`feesIncluded: true`): **"Pagas 1.90 EUR · El comercio recibe 1.00 USD · Tasa incluye comisiones"**
+- **Same currency** (`feesIncluded: false`): "Pagas 15.08 USD · El comercio recibe 15.00 USD · Comisión 0.08 USD"
+
+Don't do arithmetic on these strings in the UI; show them as they come.
+
 ## Endpoints
 
 | Method | Path | Body / Params | Response |

@@ -3,7 +3,7 @@ import { CurrencyQuote, PaymentSaleRequest, PaymentState, VerifiedReceipt } from
 import { backendCrypto } from './cryptoService.js';
 import { dbService, type HashCheck, type PaymentAttempt } from './db.js';
 import { config, type OpMode } from '../config.js';
-import { fromMinorUnits, toMinorUnits } from '@relevo/shared';
+import { effectiveRate, fromMinorUnits, toMinorUnits } from '@relevo/shared';
 import { computeInteractHash, normalizeWalletAddress, type Amount, type PaymentGateway, type WalletInfo } from './gateways/gateway.js';
 import { LiveOpenPaymentsGateway } from './gateways/live.js';
 import { SimulatorGateway } from './gateways/simulator.js';
@@ -314,9 +314,8 @@ export class OpenPaymentsService {
   private toCurrencyQuote(a: PaymentAttempt): CurrencyQuote {
     const debit = a.debitAmount;
     const receive = a.receiveAmount;
-    const debitUnits = Number(debit.value) / 10 ** debit.assetScale;
-    const receiveUnits = Number(receive.value) / 10 ** receive.assetScale;
-    // Open Payments doesn't itemize fees; we can only derive them when no FX is involved.
+    // Open Payments doesn't itemize fees. Without FX the fee is simply debit - receive;
+    // with FX it is inseparable from the rate, so we report it as included instead of a fake 0.
     const sameAsset = debit.assetCode === receive.assetCode && debit.assetScale === receive.assetScale;
     const feeMinor = sameAsset ? BigInt(debit.value) - BigInt(receive.value) : 0n;
 
@@ -324,12 +323,11 @@ export class OpenPaymentsService {
       quoteId: a.id,
       debitAmount: { value: toDecimal(debit), assetCode: debit.assetCode, assetScale: debit.assetScale },
       receiveAmount: { value: toDecimal(receive), assetCode: receive.assetCode, assetScale: receive.assetScale },
-      estimatedRate: debitUnits > 0 ? Number((receiveUnits / debitUnits).toFixed(6)) : 0,
-      fees: {
-        value: fromMinorUnits(feeMinor > 0n ? feeMinor : 0n, debit.assetScale),
-        assetCode: debit.assetCode,
-        assetScale: debit.assetScale,
-      },
+      effectiveRate: effectiveRate(debit, receive),
+      fees: sameAsset
+        ? { value: fromMinorUnits(feeMinor > 0n ? feeMinor : 0n, debit.assetScale), assetCode: debit.assetCode, assetScale: debit.assetScale }
+        : null,
+      feesIncluded: !sameAsset,
       expiresAt: a.quoteExpiresAt ?? Date.now() + 5 * 60 * 1000,
     };
   }
