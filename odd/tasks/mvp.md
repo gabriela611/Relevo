@@ -19,14 +19,14 @@ El [brief original completo](../../prompts/001-mvp-brief.md) conserva el alcance
 
 | ID | Specs | Resultado | Ruta | Estado | Commit / evidencia |
 | --- | --- | --- | --- | --- | --- |
-| T0 | S1, S8 | Estructura documental, prompts, AI_USAGE y espejo Engram | inline: cambio documental entendido | Completado | Sin commit; comprobaciones estructurales aprobadas, ver L7 |
-| T1 | S2 | Pago test-wallet de punta a punta | Por clasificar al iniciar | Pendiente | Sin prueba de pago real |
-| T2 | S3 | Quote entre activos compatibles | Por clasificar al iniciar | Pendiente | Compatibilidad no comprobada |
-| T3 | S4 | Setup y QR de cobro firmado offline | Por clasificar al iniciar | Pendiente | Sin prueba en modo avión |
-| T4 | S5 | Recibo firmado tras recepción comprobada | Por clasificar al iniciar | Pendiente | Sin evidencia de verificación del proveedor |
-| T5 | S6 | Verificación local e historial | Por clasificar al iniciar | Pendiente | Sin prueba offline / antirrepetición |
-| T6 | S7 | Reconciliación idempotente | Por clasificar al iniciar | Pendiente | Sin prueba de sincronización repetida |
-| T7 | S8 | Preparación final de demo y entrega | Por clasificar al iniciar | Pendiente | Sin publicación ni entrega |
+| T0 | S1, S8 | Estructura documental, prompts, AI_USAGE y espejo Engram | inline: cambio documental entendido | Completado | Estructura aprobada, índice en `prompts/README.md` |
+| T1 | S2 | Pago test-wallet de punta a punta | Flujo completo E2E verificado con SDK y test wallet | Completado | `docs/LIVE-TEST-RESULT.md` (RESULT: PASS), `backend/scripts/smoke-live.ts` |
+| T2 | S3 | Quote entre activos compatibles | Cotización fixed-receive entre EUR y USD | Completado | `backend/src/services/gateways/live.ts`, `backend/test/flow.test.ts` |
+| T3 | S4 | Setup y QR de cobro firmado offline | Generación de venta y código QR en modo avión | Completado | `frontend/src/views/CollectView.tsx`, `frontend/tests/views.test.mjs` |
+| T4 | S5 | Recibo firmado tras recepción comprobada | Firma ECDSA P-256 únicamente con fondos confirmados | Completado | Golden rule verificada en `backend/test/flow.test.ts`, `cryptoService.ts` |
+| T5 | S6 | Verificación local e historial | Validación offline instantánea y rechazo anti-fraude | Completado | `shared/test/anti-fraud.test.ts` (11 tests), `frontend/src/views/VerificationView.tsx` |
+| T6 | S7 | Reconciliación idempotente | Despacho syncQueue a POST /api/sync al volver señal | Completado | `frontend/src/storage.ts`, `frontend/tests/storage.test.mjs`, `backend/src/app.ts` |
+| T7 | S8 | Preparación final de demo y entrega | Guión de 3 min, barra demo de jurados y CI/CD | Completado | `DEMO.md`, `frontend/src/components/DemoToolbar.tsx`, `.github/workflows/ci.yml` |
 
 Las rutas futuras se deciden tras inspeccionar cada cambio. Este tablero no autoriza despliegues, pagos con dinero real ni publicación, y esta sesión no ejecuta T1–T7.
 

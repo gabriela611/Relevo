@@ -6,6 +6,7 @@ import {
   TransactionRow,
   EmptyState,
   OfflineBanner,
+  DemoToolbar,
 } from './components'
 import {
   CollectView,
@@ -37,11 +38,15 @@ import './App.css'
 export default function App() {
   const [route, setRoute] = useState<Route>(() => resolveRoute(window.location.hash))
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
+  const [isSimulatedOffline, setIsSimulatedOffline] = useState(false)
+  const [demoScannedReceipt, setDemoScannedReceipt] = useState<string | undefined>(undefined)
   const [targetSaleId, setTargetSaleId] = useState<string | undefined>(undefined)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [animateTotal, setAnimateTotal] = useState(false)
   const [hasSeenWelcome, setHasSeenWelcome] = useState(() => hasSeenOnboarding())
   const prevTotalRef = useRef(0)
+
+  const effectiveOnline = isOnline && !isSimulatedOffline
 
   const [merchant, setMerchant] = useState(() => getMerchantProfile())
   const verifiedTotal = getVerifiedTotalToday()
@@ -110,7 +115,7 @@ export default function App() {
       <Header
         currentRoute={route}
         onRouteChange={navigateTo}
-        isOnline={isOnline}
+        isOnline={effectiveOnline}
       />
 
       <main className="app-content flex-1">
@@ -180,7 +185,7 @@ export default function App() {
                     <ShieldCheck className="w-4 h-4 text-[#CFFA86]" />
                   </div>
                   <span className="text-base font-bold mt-2">
-                    {isOnline ? 'Listo para cobrar' : 'Cobrando sin datos'}
+                    {effectiveOnline ? 'Listo para cobrar' : 'Cobrando sin datos'}
                   </span>
                   <span className="text-xs text-white/70 mt-0.5 truncate">
                     {merchant.name}
@@ -195,8 +200,8 @@ export default function App() {
             </div>
 
             {/* Offline notification if applicable */}
-            {!isOnline && (
-              <OfflineBanner isOffline={!isOnline} isReady={true} />
+            {!effectiveOnline && (
+              <OfflineBanner isOffline={!effectiveOnline} isReady={true} />
             )}
 
             {/* Quick Actions (Circular buttons as in reference) */}
@@ -317,13 +322,19 @@ export default function App() {
         {(route as string) === 'verificar' && (
           <VerificationView
             saleId={targetSaleId}
-            onBack={() => navigateTo('inicio')}
+            initialReceiptQr={demoScannedReceipt}
+            onBack={() => {
+              setDemoScannedReceipt(undefined)
+              navigateTo('inicio')
+            }}
             onNewSale={() => {
               setTargetSaleId(undefined)
+              setDemoScannedReceipt(undefined)
               navigateTo('cobrar')
             }}
             onHome={() => {
               setTargetSaleId(undefined)
+              setDemoScannedReceipt(undefined)
               navigateTo('inicio')
             }}
           />
@@ -393,6 +404,16 @@ export default function App() {
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScan={handleQuickScan}
+      />
+
+      {/* Judge & Simulation Toolbar */}
+      <DemoToolbar
+        onScanReceipt={(qr) => {
+          setDemoScannedReceipt(qr)
+          navigateTo('verificar' as Route)
+        }}
+        onSimulateOffline={setIsSimulatedOffline}
+        isSimulatedOffline={isSimulatedOffline}
       />
     </div>
   )
