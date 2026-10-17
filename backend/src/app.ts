@@ -2,38 +2,12 @@ import Fastify, { type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import { OpenPaymentsClientError } from '@interledger/open-payments';
-import { PaymentSaleRequest, OfflineSyncRecord } from '@relevo/shared';
+import { OfflineSyncRecord } from '@relevo/shared';
 import { config, MODE_LABEL } from './config.js';
 import { backendCrypto } from './services/cryptoService.js';
 import { dbService } from './services/db.js';
 import { openPaymentsService, PaymentFlowError } from './services/openPayments.js';
-import { isValidDecimalAmount } from '@relevo/shared';
-
-/** Validates the sale fields the backend relies on and fills harmless defaults. */
-function normalizeSale(input: unknown): PaymentSaleRequest | string {
-  const s = (input ?? {}) as Partial<PaymentSaleRequest>;
-  if (!s.saleId || typeof s.saleId !== 'string') return 'saleId es requerido.';
-  if (!s.merchantWalletAddress) return 'merchantWalletAddress es requerido.';
-  if (!s.amount || !isValidDecimalAmount(String(s.amount))) return 'amount debe ser un decimal positivo, ej. "15.00".';
-  if (!s.currency || !/^[A-Za-z]{3}$/.test(s.currency)) return 'currency debe ser un código ISO de 3 letras.';
-  const assetScale = s.assetScale ?? 2;
-  if (!Number.isInteger(assetScale) || assetScale < 0 || assetScale > 9) return 'assetScale inválido.';
-  const now = Date.now();
-  return {
-    version: '1',
-    saleId: s.saleId,
-    merchantId: s.merchantId || 'merchant-default',
-    merchantName: s.merchantName || config.defaultMerchantName,
-    merchantWalletAddress: s.merchantWalletAddress,
-    amount: String(s.amount),
-    currency: s.currency.toUpperCase(),
-    assetScale,
-    createdAt: s.createdAt ?? now,
-    expiresAt: s.expiresAt ?? now + 30 * 60 * 1000,
-    nonce: s.nonce || crypto.randomUUID(),
-    merchantSignature: s.merchantSignature,
-  };
-}
+import { acceptSignedSale, registerMerchant } from './services/merchants.js';
 
 export async function buildServer(opts: FastifyServerOptions = {}) {
   const fastify = Fastify(opts);
@@ -44,7 +18,7 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
 
   fastify.setErrorHandler((err, _req, reply) => {
     if (err instanceof PaymentFlowError) {
-      return reply.status(err.statusCode).send({ success: false, error: err.message });
+      return reply.status(err.statusCode).send({ success: false, error: err.message, ...(err.reason ? { reason: err.reason } : {}) });
     }
     if (err instanceof OpenPaymentsClientError) {
       fastify.log.error({ status: err.status, description: err.description, validationErrors: err.validationErrors }, 'Open Payments error');
@@ -81,11 +55,15 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
     modeLabel: MODE_LABEL[openPaymentsService.mode],
   }));
 
-  // 3. Register a sale (idempotent on saleId)
-  fastify.post('/api/sales', async (req, reply) => {
-    const sale = normalizeSale(req.body);
-    if (typeof sale === 'string') return reply.badRequest(sale);
-    dbService.createSale(sale, 'WAITING_PAYMENT');
+  // 3a. Register the merchant device's public key (while online, once per wallet)
+  fastify.post('/api/merchants/register', async (req, reply) => {
+    const { statusCode, ...result } = await registerMerchant(req.body);
+    return reply.status(statusCode).send({ success: true, ...result });
+  });
+
+  // 3b. Register a signed sale (idempotent on saleId + content)
+  fastify.post('/api/sales', async (req) => {
+    const sale = await acceptSignedSale(req.body);
     return { success: true, sale: openPaymentsService.getSale(sale.saleId) };
   });
 
@@ -112,10 +90,8 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
   fastify.post('/api/payments/quote', async (req, reply) => {
     const { sale: rawSale, payerWalletAddress } = (req.body ?? {}) as { sale?: unknown; payerWalletAddress?: string };
     if (!payerWalletAddress) return reply.badRequest('payerWalletAddress es requerido.');
-    const sale = normalizeSale(rawSale);
-    if (typeof sale === 'string') return reply.badRequest(sale);
-
-    dbService.createSale(sale);
+    // The sale comes from the merchant's QR via the buyer: only trust it if the merchant signed it.
+    const sale = await acceptSignedSale(rawSale);
     const quote = await openPaymentsService.createQuote({ sale, payerWalletAddress });
     return { success: true, quote };
   });
@@ -186,8 +162,11 @@ export async function buildServer(opts: FastifyServerOptions = {}) {
     const rejected: Array<{ saleId: string; reason: string }> = [];
     for (const record of records) {
       if (record.saleRequest) {
-        const sale = normalizeSale(record.saleRequest);
-        if (typeof sale !== 'string') dbService.createSale(sale, 'WAITING_PAYMENT');
+        try {
+          await acceptSignedSale(record.saleRequest);
+        } catch (err) {
+          rejected.push({ saleId: record.saleId, reason: (err as PaymentFlowError).reason ?? 'INVALID_SALE' });
+        }
       }
       if (record.verifiedReceipt) {
         // Never trust a receipt from a device: it must be a v2 receipt with our own valid signature.

@@ -81,10 +81,15 @@ try {
   log(`\n[1] merchant: ${merchant.id} (${merchant.assetCode}, scale ${merchant.assetScale})`);
   log(`    buyer:    ${buyer.id} (${buyer.assetCode}, scale ${buyer.assetScale})`);
 
-  // 2. Sale
+  // 2. Merchant device setup (in-memory DB, so a fresh key each run) + signed sale
+  config.merchantWallets.push(merchant.id); // smoke-only: allow the test merchant wallet
+  const device = await shared.generateMerchantKeyPair();
+  const reg = await api('POST', '/api/merchants/register', { merchantWallet: merchant.id, publicKeyJwk: device.publicKeyJwk });
+  log(`[2] merchant key registered: keyId ${reg.keyId}`);
+
   const amount = process.env.SMOKE_AMOUNT || '1.00';
-  const sale = {
-    version: '1' as const,
+  const sale = await shared.signSale({
+    version: '2',
     saleId: `smoke-${crypto.randomUUID()}`,
     merchantId: 'smoke',
     merchantName: 'RELEVO smoke test',
@@ -95,9 +100,12 @@ try {
     createdAt: Date.now(),
     expiresAt: Date.now() + 15 * 60 * 1000,
     nonce: crypto.randomUUID(),
-  };
-  await api('POST', '/api/sales', sale);
-  log(`[2] sale: ${sale.saleId} · ${amount} ${sale.currency}`);
+  }, device.keyPair.privateKey, device.keyId);
+  // The buyer gets the sale through the merchant's QR: round-trip it like the PWA would.
+  const scannedSale = shared.parseSaleFromQr(shared.encodeSaleToQr(sale));
+  if (!scannedSale) throw new Error('el QR de venta firmado no se pudo leer');
+  await api('POST', '/api/sales', scannedSale);
+  log(`    signed sale: ${sale.saleId} · ${amount} ${sale.currency}`);
 
   // 3. Incoming payment + quote
   let { quote } = await api('POST', '/api/payments/quote', { sale, payerWalletAddress: buyer.id });

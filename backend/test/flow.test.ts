@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { IncomingPaymentStatus, PaymentGateway, WalletInfo } from '../src/services/gateways/gateway.js';
+import type { PaymentSaleRequest, UnsignedSale } from '@relevo/shared';
 
 // Configure before any backend module reads config.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-test-'));
@@ -11,6 +12,7 @@ process.env.RELEVO_SKIP_DOTENV = '1';
 process.env.DB_PATH = ':memory:';
 process.env.RELEVO_KEYS_FILE = path.join(tmpDir, 'keys.json');
 process.env.OP_MODE = 'simulator';
+process.env.MERCHANT_WALLETS = 'https://ilp.interledger-test.dev/tienda-usd, https://ilp.interledger-test.dev/otra-tienda';
 process.env.PUBLIC_BACKEND_URL = 'http://backend.test';
 process.env.PUBLIC_FRONTEND_URL = 'http://frontend.test';
 
@@ -27,25 +29,32 @@ let pinnedKey: Awaited<ReturnType<typeof shared.importPinnedReceiptKey>>;
 const MERCHANT = 'https://ilp.interledger-test.dev/tienda-usd';
 const PAYER_EUR = 'https://ilp.interledger-test.dev/turista-eur';
 
-function newSale(overrides: Record<string, unknown> = {}) {
-  return {
-    version: '1' as const,
-    saleId: `sale-${crypto.randomUUID()}`,
-    merchantId: 'merchant-default',
-    merchantName: 'Tienda Test',
-    merchantWalletAddress: MERCHANT,
-    amount: '15.00',
-    currency: 'USD',
-    assetScale: 2,
-    createdAt: Date.now(),
-    expiresAt: Date.now() + 10 * 60 * 1000,
-    nonce: crypto.randomUUID(),
-    ...overrides,
-  };
+let merchantKey: Awaited<ReturnType<typeof shared.generateMerchantKeyPair>>;
+
+/** A sale signed by the registered merchant device key (overrides are applied before signing). */
+async function newSale(overrides: Record<string, unknown> = {}, key = merchantKey): Promise<PaymentSaleRequest> {
+  return shared.signSale(
+    {
+      version: '2',
+      saleId: `sale-${crypto.randomUUID()}`,
+      merchantId: 'merchant-default',
+      merchantName: 'Tienda Test',
+      merchantWalletAddress: MERCHANT,
+      amount: '15.00',
+      currency: 'USD',
+      assetScale: 2,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      nonce: crypto.randomUUID(),
+      ...overrides,
+    } as UnsignedSale,
+    key.keyPair.privateKey,
+    key.keyId
+  );
 }
 
 /** Runs quote + authorize and returns the GNAP redirect the payer would follow. */
-async function quoteAndAuthorize(sale: ReturnType<typeof newSale>) {
+async function quoteAndAuthorize(sale: PaymentSaleRequest) {
   const quoteRes = await app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale, payerWalletAddress: PAYER_EUR } });
   assert.equal(quoteRes.statusCode, 200, quoteRes.body);
   const { quote } = quoteRes.json();
@@ -67,6 +76,15 @@ before(async () => {
   const keyInfo = (await app.inject({ method: 'GET', url: '/api/receipt-key' })).json();
   assert.equal(keyInfo.alg, 'ES256');
   pinnedKey = await shared.importPinnedReceiptKey(keyInfo);
+
+  // Merchant device setup: non-extractable key, registered while online.
+  merchantKey = await shared.generateMerchantKeyPair();
+  const reg = await app.inject({
+    method: 'POST',
+    url: '/api/merchants/register',
+    payload: { merchantWallet: MERCHANT, publicKeyJwk: merchantKey.publicKeyJwk },
+  });
+  assert.equal(reg.statusCode, 201, reg.body);
 });
 
 after(async () => {
@@ -75,7 +93,7 @@ after(async () => {
 });
 
 /** Verifier context of a merchant device that created `sale`. */
-function deviceCtx(sale: ReturnType<typeof newSale>, redeemed = new Set<string>()) {
+function deviceCtx(sale: PaymentSaleRequest, redeemed = new Set<string>()) {
   return {
     pinnedKey,
     deviceWallet: MERCHANT,
@@ -85,7 +103,7 @@ function deviceCtx(sale: ReturnType<typeof newSale>, redeemed = new Set<string>(
 }
 
 async function paidSale() {
-  const sale = newSale();
+  const sale = await newSale();
   const { redirectUrl } = await quoteAndAuthorize(sale);
   await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
   const { receipt } = (await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` })).json();
@@ -93,7 +111,7 @@ async function paidSale() {
 }
 
 test('full flow: quote -> authorize -> callback issues a receipt that verifies offline', async () => {
-  const sale = newSale();
+  const sale = await newSale();
   const { quote, redirectUrl } = await quoteAndAuthorize(sale);
 
   assert.equal(quote.receiveAmount.value, '15.00');
@@ -138,7 +156,7 @@ test('full flow: quote -> authorize -> callback issues a receipt that verifies o
 });
 
 test('same-currency quote keeps an explicit fee', async () => {
-  const sale = newSale();
+  const sale = await newSale();
   const res = await app.inject({
     method: 'POST',
     url: '/api/payments/quote',
@@ -198,7 +216,7 @@ test('/api/sync rejects forged receipts and accepts genuine ones', async () => {
 });
 
 test('buyer rejecting in the wallet -> payment=failed&reason=GRANT_REJECTED, sale stays payable', async () => {
-  const sale = newSale();
+  const sale = await newSale();
   const { paymentId } = await quoteAndAuthorize(sale);
 
   const cb = await app.inject({ method: 'GET', url: `/api/payments/callback?paymentId=${paymentId}&result=grant_rejected` });
@@ -221,7 +239,7 @@ test('buyer rejecting in the wallet -> payment=failed&reason=GRANT_REJECTED, sal
 });
 
 test('callback without interact_ref -> payment=failed&reason=MISSING_INTERACT_REF', async () => {
-  const sale = newSale();
+  const sale = await newSale();
   const { paymentId } = await quoteAndAuthorize(sale);
   const cb = await app.inject({ method: 'GET', url: `/api/payments/callback?paymentId=${paymentId}` });
   const loc = new URL(cb.headers.location as string);
@@ -243,7 +261,7 @@ test('quote expiring within 60 s is re-quoted instead of authorized', async () =
   }
   openPaymentsService.useGateway(new ShortQuoteOnce());
   try {
-    const sale = newSale();
+    const sale = await newSale();
     const { quote } = (await app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale, payerWalletAddress: PAYER_EUR } })).json();
 
     const first = (await app.inject({ method: 'POST', url: '/api/payments/authorize', payload: { quoteId: quote.quoteId } })).json();
@@ -270,7 +288,7 @@ test('interaction hash: MATCH recorded; mismatch warns when STRICT_HASH=false an
 
   // Correct hash from the (simulated) wallet.
   {
-    const sale = newSale();
+    const sale = await newSale();
     const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
     await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
     assert.equal((await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json().hashCheck, 'MATCH');
@@ -284,7 +302,7 @@ test('interaction hash: MATCH recorded; mismatch warns when STRICT_HASH=false an
 
   assert.equal(config.strictHash, false, 'STRICT_HASH must default to false');
   {
-    const sale = newSale();
+    const sale = await newSale();
     const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
     const cb = await app.inject({ method: 'GET', url: tamperedHash(redirectUrl) });
     assert.equal(new URL(cb.headers.location as string).searchParams.get('payment'), 'success');
@@ -293,7 +311,7 @@ test('interaction hash: MATCH recorded; mismatch warns when STRICT_HASH=false an
 
   config.strictHash = true;
   try {
-    const sale = newSale();
+    const sale = await newSale();
     const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
     const cb = await app.inject({ method: 'GET', url: tamperedHash(redirectUrl) });
     const loc = new URL(cb.headers.location as string);
@@ -316,7 +334,7 @@ test('golden rule: no receipt is signed when funds never arrive', async () => {
   }
   openPaymentsService.useGateway(new NoFundsGateway());
   try {
-    const sale = newSale();
+    const sale = await newSale();
     const { redirectUrl } = await quoteAndAuthorize(sale);
     // Shorten the poll window for the test.
     const verify = openPaymentsService.verifyPayment.bind(openPaymentsService);
@@ -370,7 +388,7 @@ test('golden rule: partial payment, wrong currency or a short incoming payment n
   try {
     for (const [label, mutate, expectReceipt] of cases) {
       openPaymentsService.useGateway(new Tamper(mutate));
-      const sale = newSale();
+      const sale = await newSale();
       const { redirectUrl } = await quoteAndAuthorize(sale);
       const cb = await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
       const payment = new URL(cb.headers.location as string).searchParams.get('payment');
@@ -387,8 +405,8 @@ test('golden rule: partial payment, wrong currency or a short incoming payment n
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test('expiry: GET /api/sales and /api/sales/:id expire unpaid sales on read', async () => {
-  const expired = newSale({ expiresAt: Date.now() - 1000 });
-  const fresh = newSale();
+  const expired = await newSale({ expiresAt: Date.now() - 1000 });
+  const fresh = await newSale();
   await app.inject({ method: 'POST', url: '/api/sales', payload: expired });
   await app.inject({ method: 'POST', url: '/api/sales', payload: fresh });
 
@@ -405,7 +423,7 @@ test('expiry: GET /api/sales and /api/sales/:id expire unpaid sales on read', as
 });
 
 test('expiry: a callback after the sale expired is refused before paying (SALE_EXPIRED)', async () => {
-  const sale = newSale({ expiresAt: Date.now() + 1000 });
+  const sale = await newSale({ expiresAt: Date.now() + 1000 });
   const { paymentId, redirectUrl } = await quoteAndAuthorize(sale);
   await sleep(1100);
 
@@ -429,7 +447,7 @@ test('expiry: an attempt that fails after the sale expired keeps FAILED_OR_EXPIR
   }
   openPaymentsService.useGateway(new SlowFailure());
   try {
-    const sale = newSale({ expiresAt: Date.now() + 1000 });
+    const sale = await newSale({ expiresAt: Date.now() + 1000 });
     const { redirectUrl } = await quoteAndAuthorize(sale);
     const cb = await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
     assert.equal(new URL(cb.headers.location as string).searchParams.get('reason'), 'PAYMENT_FAILED');
@@ -456,6 +474,66 @@ test('simulator rejects payments to an expired incoming payment', async () => {
   assert.equal((await sim.getIncomingPayment(merchant, id)).receivedAmount.value, '0');
 });
 
+test('merchant registration: allowlist, idempotent for the same key, 409 for a different key, public keys only', async () => {
+  const again = await app.inject({ method: 'POST', url: '/api/merchants/register', payload: { merchantWallet: MERCHANT, publicKeyJwk: merchantKey.publicKeyJwk } });
+  assert.equal(again.statusCode, 200);
+  assert.equal(again.json().alreadyRegistered, true);
+  assert.equal(again.json().keyId, merchantKey.keyId);
+
+  const other = await shared.generateMerchantKeyPair();
+  const rotate = await app.inject({ method: 'POST', url: '/api/merchants/register', payload: { merchantWallet: MERCHANT, publicKeyJwk: other.publicKeyJwk } });
+  assert.equal(rotate.statusCode, 409);
+  assert.equal(rotate.json().reason, 'KEY_ALREADY_REGISTERED');
+
+  const notAllowed = await app.inject({
+    method: 'POST',
+    url: '/api/merchants/register',
+    payload: { merchantWallet: 'https://ilp.interledger-test.dev/atacante', publicKeyJwk: other.publicKeyJwk },
+  });
+  assert.equal(notAllowed.statusCode, 403);
+  assert.equal(notAllowed.json().reason, 'MERCHANT_NOT_ALLOWED');
+
+  const extractable = await shared.generateEcdsaKeyPair();
+  const privateJwk = await shared.exportKeyToJwk(extractable.privateKey);
+  const withPrivate = await app.inject({
+    method: 'POST',
+    url: '/api/merchants/register',
+    payload: { merchantWallet: 'https://ilp.interledger-test.dev/otra-tienda', publicKeyJwk: privateJwk },
+  });
+  assert.equal(withPrivate.statusCode, 400);
+  assert.equal(withPrivate.json().reason, 'INVALID_KEY');
+});
+
+test('quote rejects unsigned, tampered, unregistered, wrong-key and reused-saleId sales with a reason code', async () => {
+  const quote = (sale: unknown) => app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale, payerWalletAddress: PAYER_EUR } });
+  const expectReason = async (sale: unknown, reason: string) => {
+    const res = await quote(sale);
+    assert.equal(res.statusCode, 400, `${reason}: ${res.body}`);
+    assert.equal(res.json().reason, reason);
+  };
+
+  const good = await newSale();
+  const { merchantSignature: _sig, merchantKeyId: _kid, ...unsigned } = good;
+  await expectReason(unsigned, 'SALE_SIGNATURE_MISSING');
+
+  // A QR edited to pay a different wallet, or a different amount/currency.
+  await expectReason({ ...good, merchantWalletAddress: 'https://ilp.interledger-test.dev/atacante' }, 'MERCHANT_NOT_REGISTERED');
+  await expectReason({ ...good, amount: '1.50' }, 'INVALID_SALE_SIGNATURE');
+  await expectReason({ ...good, currency: 'EUR' }, 'INVALID_SALE_SIGNATURE');
+
+  // Signed by some other device key for the registered wallet.
+  const intruder = await shared.generateMerchantKeyPair();
+  await expectReason(await newSale({}, intruder), 'MERCHANT_KEY_MISMATCH');
+
+  // The same saleId first with one content, then with another.
+  assert.equal((await quote(good)).statusCode, 200);
+  const reused = await shared.signSale({ ...unsigned, amount: '1.00' }, merchantKey.keyPair.privateKey, merchantKey.keyId);
+  await expectReason(reused, 'SALE_ID_REUSED');
+  // Re-signing the same content (new random signature) is fine.
+  const resigned = await shared.signSale(unsigned, merchantKey.keyPair.privateKey, merchantKey.keyId);
+  assert.equal((await quote(resigned)).statusCode, 200);
+});
+
 test('health exposes the explicit mode', async () => {
   const health = (await app.inject({ method: 'GET', url: '/api/health' })).json();
   assert.equal(health.mode, 'simulator');
@@ -470,9 +548,10 @@ test('live mode without credentials refuses to initialize instead of falling bac
 });
 
 test('rejects invalid sale payloads', async () => {
-  const res = await app.inject({ method: 'POST', url: '/api/sales', payload: newSale({ amount: '-5' }) });
+  const res = await app.inject({ method: 'POST', url: '/api/sales', payload: await newSale({ amount: '-5' }) });
   assert.equal(res.statusCode, 400);
-  const expired = newSale({ expiresAt: Date.now() - 1000 });
+  assert.equal(res.json().reason, 'INVALID_SALE');
+  const expired = await newSale({ expiresAt: Date.now() - 1000 });
   const q = await app.inject({ method: 'POST', url: '/api/payments/quote', payload: { sale: expired, payerWalletAddress: PAYER_EUR } });
   assert.equal(q.statusCode, 410);
 });

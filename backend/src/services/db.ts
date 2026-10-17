@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { config } from '../config.js';
-import { PaymentSaleRequest, VerifiedReceipt, PaymentState, MerchantProfile } from '@relevo/shared';
+import { PaymentSaleRequest, VerifiedReceipt, PaymentState, MerchantKeyRegistration } from '@relevo/shared';
 import type { Amount } from './gateways/gateway.js';
 
 export type PaymentAttemptStatus = 'QUOTED' | 'AUTHORIZATION_PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
@@ -79,12 +79,12 @@ if (legacyReceiptCols.some((c) => c.name === 'payer_wallet')) {
 
 // Create schema
 db.exec(`
-  CREATE TABLE IF NOT EXISTS merchants (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    wallet_address TEXT NOT NULL,
+  -- One device key per merchant wallet (no rotation in this version).
+  CREATE TABLE IF NOT EXISTS merchant_keys (
+    wallet_address TEXT PRIMARY KEY,
+    key_id TEXT NOT NULL,
     public_key_jwk TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    registered_at INTEGER NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS sales (
@@ -99,7 +99,8 @@ db.exec(`
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL,
     nonce TEXT NOT NULL,
-    merchant_signature TEXT
+    merchant_signature TEXT,
+    merchant_key_id TEXT
   );
 
   -- One row per payment attempt (quote -> GNAP authorization -> outgoing payment).
@@ -149,37 +150,51 @@ const paymentCols = db.prepare(`PRAGMA table_info(payments)`).all() as Array<{ n
 if (!paymentCols.some((c) => c.name === 'hash_check')) {
   db.exec(`ALTER TABLE payments ADD COLUMN hash_check TEXT`);
 }
+const saleCols = db.prepare(`PRAGMA table_info(sales)`).all() as Array<{ name: string }>;
+if (!saleCols.some((c) => c.name === 'merchant_key_id')) {
+  db.exec(`ALTER TABLE sales ADD COLUMN merchant_key_id TEXT`);
+}
+
+type StoredSale = PaymentSaleRequest & { status: PaymentState };
+
+function rowToSale(row: Record<string, unknown>): StoredSale {
+  return {
+    version: '2',
+    saleId: row.sale_id as string,
+    merchantId: row.merchant_id as string,
+    merchantName: row.merchant_name as string,
+    merchantWalletAddress: row.merchant_wallet_address as string,
+    amount: row.amount as string,
+    currency: row.currency as string,
+    assetScale: Number(row.asset_scale),
+    createdAt: Number(row.created_at),
+    expiresAt: Number(row.expires_at),
+    nonce: row.nonce as string,
+    // Legacy unsigned rows come back with empty strings and never match a signed sale.
+    merchantKeyId: (row.merchant_key_id as string) || '',
+    merchantSignature: (row.merchant_signature as string) || '',
+    status: row.status as PaymentState,
+  };
+}
 
 export const dbService = {
-  // Merchant operations
-  upsertMerchant(merchant: MerchantProfile): void {
-    const stmt = db.prepare(`
-      INSERT INTO merchants (id, name, wallet_address, public_key_jwk, created_at)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        wallet_address = excluded.wallet_address,
-        public_key_jwk = excluded.public_key_jwk
-    `);
-    stmt.run(
-      merchant.id,
-      merchant.name,
-      merchant.walletAddress,
-      JSON.stringify(merchant.publicKeyJwk),
-      merchant.createdAt
-    );
+  // Merchant device keys
+  /** Inserts the key for a wallet; returns false if the wallet already has one. */
+  registerMerchantKey(reg: MerchantKeyRegistration): boolean {
+    const result = db
+      .prepare(`INSERT INTO merchant_keys (wallet_address, key_id, public_key_jwk, registered_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`)
+      .run(reg.merchantWallet, reg.keyId, JSON.stringify(reg.publicKeyJwk), reg.registeredAt);
+    return Number(result.changes) > 0;
   },
 
-  getMerchant(id: string): MerchantProfile | null {
-    const stmt = db.prepare(`SELECT * FROM merchants WHERE id = ?`);
-    const row = stmt.get(id) as Record<string, unknown> | undefined;
+  getMerchantKey(walletAddress: string): MerchantKeyRegistration | null {
+    const row = db.prepare(`SELECT * FROM merchant_keys WHERE wallet_address = ?`).get(walletAddress) as Record<string, unknown> | undefined;
     if (!row) return null;
     return {
-      id: row.id as string,
-      name: row.name as string,
-      walletAddress: row.wallet_address as string,
+      merchantWallet: row.wallet_address as string,
+      keyId: row.key_id as string,
       publicKeyJwk: JSON.parse(row.public_key_jwk as string),
-      createdAt: Number(row.created_at),
+      registeredAt: Number(row.registered_at),
     };
   },
 
@@ -188,8 +203,8 @@ export const dbService = {
     const stmt = db.prepare(`
       INSERT INTO sales (
         sale_id, merchant_id, merchant_name, merchant_wallet_address,
-        amount, currency, asset_scale, status, created_at, expires_at, nonce, merchant_signature
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        amount, currency, asset_scale, status, created_at, expires_at, nonce, merchant_signature, merchant_key_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(sale_id) DO NOTHING
     `);
     stmt.run(
@@ -204,29 +219,14 @@ export const dbService = {
       sale.createdAt,
       sale.expiresAt,
       sale.nonce,
-      sale.merchantSignature || null
+      sale.merchantSignature,
+      sale.merchantKeyId
     );
   },
 
-  getSale(saleId: string): (PaymentSaleRequest & { status: PaymentState }) | null {
-    const stmt = db.prepare(`SELECT * FROM sales WHERE sale_id = ?`);
-    const row = stmt.get(saleId) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return {
-      version: '1',
-      saleId: row.sale_id as string,
-      merchantId: row.merchant_id as string,
-      merchantName: row.merchant_name as string,
-      merchantWalletAddress: row.merchant_wallet_address as string,
-      amount: row.amount as string,
-      currency: row.currency as string,
-      assetScale: Number(row.asset_scale),
-      createdAt: Number(row.created_at),
-      expiresAt: Number(row.expires_at),
-      nonce: row.nonce as string,
-      merchantSignature: (row.merchant_signature as string) || undefined,
-      status: row.status as PaymentState,
-    };
+  getSale(saleId: string): StoredSale | null {
+    const row = db.prepare(`SELECT * FROM sales WHERE sale_id = ?`).get(saleId) as Record<string, unknown> | undefined;
+    return row ? rowToSale(row) : null;
   },
 
   updateSaleStatus(saleId: string, status: PaymentState): void {
@@ -323,23 +323,8 @@ export const dbService = {
     return JSON.parse(row.raw_json) as VerifiedReceipt;
   },
 
-  listAllSales(): Array<PaymentSaleRequest & { status: PaymentState }> {
-    const stmt = db.prepare(`SELECT * FROM sales ORDER BY created_at DESC LIMIT 50`);
-    const rows = stmt.all() as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      version: '1',
-      saleId: row.sale_id as string,
-      merchantId: row.merchant_id as string,
-      merchantName: row.merchant_name as string,
-      merchantWalletAddress: row.merchant_wallet_address as string,
-      amount: row.amount as string,
-      currency: row.currency as string,
-      assetScale: Number(row.asset_scale),
-      createdAt: Number(row.created_at),
-      expiresAt: Number(row.expires_at),
-      nonce: row.nonce as string,
-      merchantSignature: (row.merchant_signature as string) || undefined,
-      status: row.status as PaymentState,
-    }));
+  listAllSales(): StoredSale[] {
+    const rows = db.prepare(`SELECT * FROM sales ORDER BY created_at DESC LIMIT 50`).all() as Array<Record<string, unknown>>;
+    return rows.map(rowToSale);
   },
 };

@@ -28,6 +28,12 @@ export interface ServerConfig {
   publicBackendUrl: string;
   /** Origins allowed by CORS. */
   corsOrigins: string[];
+  /**
+   * Wallets allowed to register a merchant device key (MERCHANT_WALLETS,
+   * comma-separated; defaults to MERCHANT_WALLET). Stopgap until wallet
+   * ownership is proven through Open Payments.
+   */
+  merchantWallets: string[];
   openPayments: {
     /** Wallet address that identifies RELEVO as an Open Payments client (owner of the developer key). */
     clientWalletAddress: string;
@@ -66,6 +72,7 @@ export const config: ServerConfig = {
   dbPath: process.env.DB_PATH || 'relevo.sqlite',
   keysFile: path.resolve(BACKEND_DIR, process.env.RELEVO_KEYS_FILE || '.relevo-backend-keys.json'),
   defaultMerchantWallet,
+  merchantWallets: (process.env.MERCHANT_WALLETS || defaultMerchantWallet).split(',').map((w) => w.trim()).filter(Boolean),
   defaultMerchantName: process.env.MERCHANT_NAME || 'Doña Elena - Tienda Local',
   publicFrontendUrl,
   publicBackendUrl: stripSlash(process.env.PUBLIC_BACKEND_URL || publicFrontendUrl),

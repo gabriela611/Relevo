@@ -129,6 +129,12 @@ El 2026-10-17 el flujo completo pasó contra la **Interledger Test Wallet** (`OP
 
 Salida completa: [docs/LIVE-TEST-RESULT.md](docs/LIVE-TEST-RESULT.md).
 
+## ⚠️ Limitaciones conocidas
+
+- **Registro de comercios por lista blanca.** Un dispositivo de comercio registra su llave pública (`POST /api/merchants/register`) solo para billeteras listadas en `MERCHANT_WALLETS`. El primero que registra una billetera de la lista queda como su dueño, y **no hay rotación de llaves**: una llave distinta para la misma billetera recibe 409.
+  **Siguiente paso:** reemplazar la lista blanca por una prueba de propiedad de la billetera mediante la verificación de propiedad de *wallet address* de Open Payments.
+- **Sin barrido en segundo plano.** Las ventas vencidas pasan a `FAILED_OR_EXPIRED` al leerlas o al intentar pagarlas.
+
 ## 🚀 Primeros Pasos (Desarrollo Local)
 
 ### Prerrequisitos

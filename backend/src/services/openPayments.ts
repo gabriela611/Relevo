@@ -12,7 +12,8 @@ export type { WalletInfo };
 
 /** Error with an HTTP status the API layer can return as-is. */
 export class PaymentFlowError extends Error {
-  constructor(public statusCode: number, message: string) {
+  /** reason: optional machine-readable code returned to the client (e.g. INVALID_SALE_SIGNATURE). */
+  constructor(public statusCode: number, message: string, public reason?: string) {
     super(message);
   }
 }

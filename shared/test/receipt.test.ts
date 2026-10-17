@@ -24,7 +24,7 @@ let pinned: PinnedReceiptKey;
 let otherPinned: PinnedReceiptKey;
 
 const sale: PaymentSaleRequest = {
-  version: '1',
+  version: '2',
   saleId: 'sale-1',
   merchantId: 'm',
   merchantName: 'Tienda',
@@ -35,6 +35,9 @@ const sale: PaymentSaleRequest = {
   createdAt: 0,
   expiresAt: Date.now() + 60_000,
   nonce: 'n',
+  // The receipt verifier doesn't re-check the sale signature (the backend did on quote).
+  merchantKeyId: 'k',
+  merchantSignature: 's',
 };
 
 async function makePinned(): Promise<{ privateKey: CryptoKey; pinned: PinnedReceiptKey }> {

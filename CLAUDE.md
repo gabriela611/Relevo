@@ -24,6 +24,7 @@ Hackathon MVP (Open Payments / Interledger). PWA where a merchant receives cross
 - **Receipt v2** binds saleId, merchantWallet, amount {value, assetCode, assetScale}, incoming/outgoing ids, issuedAt, keyId, mode. No payer data. Any change to signed fields must update `getReceiptPayloadForSigning`, `isReceiptV2`, the verifier and the tests together.
 - **Signing key is stable:** live mode refuses to start without the key file; never add code that regenerates it automatically outside the simulator.
 - `STRICT_HASH` stays `false` until a live smoke run prints `hash: MATCH`.
+- **Sales are signed by the merchant device** (sale v2, `signSale`/`verifySale`). The backend never stores or quotes a sale that fails `acceptSignedSale` (`backend/src/services/merchants.ts`), and never adds defaults to a sale (it would break the signature).
 - Receipts are immutable once issued (`INSERT ... ON CONFLICT DO NOTHING`); `/api/sync` only accepts receipts with our own valid signature and the current mode.
 - Tests set `RELEVO_SKIP_DOTENV=1` so a developer's `.env` never leaks into them. Never read `backend/.env` or `*.key` from tooling.
 - Open Payments amounts are integer strings in minor units (`"1500"`, scale 2). Use `shared/src/amounts.ts` (BigInt), never floats, for anything that decides payment validity.

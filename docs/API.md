@@ -15,6 +15,56 @@ Quote amounts are **human decimals** (`"15.00"`). Receipt amounts are **Open Pay
 
 The backend runs in exactly one mode, set by `OP_MODE` in `backend/.env`. It never switches modes on its own: in live mode, Open Payments errors come back as errors (HTTP 502 with the provider description).
 
+## Merchant setup and signed sales (frontend contract)
+
+The sale QR is **signed on the merchant device**. The backend refuses to quote any sale that isn't signed by the key registered for its merchant wallet, so an edited QR can't redirect the buyer's money.
+
+**1. Merchant setup, once, while online:**
+```ts
+import { generateMerchantKeyPair } from '@relevo/shared';
+
+const { keyPair, publicKeyJwk, keyId } = await generateMerchantKeyPair(); // ECDSA P-256; private key NON-extractable
+await idb.put('merchantKey', { keyPair, keyId });                       // CryptoKey objects can be stored in IndexedDB as is
+const res = await fetch('/api/merchants/register', {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ merchantWallet: myMerchantWallet, publicKeyJwk }),
+});
+// 201 registered · 200 { alreadyRegistered: true } (same key) · 409 KEY_ALREADY_REGISTERED · 403 MERCHANT_NOT_ALLOWED · 400 INVALID_KEY
+```
+- Never generate a new key once registered: there is **no key rotation** in this version, so a new key gets 409.
+- Never send the private key. The backend only accepts public JWKs (no `d`).
+
+**2. Every sale, can be offline:**
+```ts
+import { signSale, encodeSaleToQr } from '@relevo/shared';
+
+const { keyPair, keyId } = await idb.get('merchantKey');
+const sale = await signSale({
+  version: '2', saleId: crypto.randomUUID(), merchantId, merchantName,
+  merchantWalletAddress: myMerchantWallet, amount: '15.00', currency: 'USD', assetScale: 2,
+  createdAt: Date.now(), expiresAt: Date.now() + 15 * 60_000, nonce: crypto.randomUUID(),
+}, keyPair.privateKey, keyId);
+await idb.put('sales', sale);   // also the source for getDeviceSale in the offline verifier
+showQr(encodeSaleToQr(sale));   // "relevo:sale:v2:..."
+```
+- Every field is signed, so don't modify the sale after signing (no uppercasing, defaults or reformatting).
+- `currency` must already be uppercase ISO, and `amount` a decimal string.
+
+**3. Buyer side:** `parseSaleFromQr(scanned)`. Send the parsed object unchanged as `sale` in `POST /api/payments/quote`.
+
+Sale rejection reasons (HTTP 400, `{ success: false, error, reason }`) from `POST /api/payments/quote`, `POST /api/sales` and `/api/sync`:
+
+| `reason` | Meaning | UI (buyer) |
+|---|---|---|
+| `SALE_SIGNATURE_MISSING` | Unsigned or old (v1) sale QR | "Este QR no es válido. Pide al comercio uno nuevo." |
+| `INVALID_SALE` | Malformed fields (amount, currency, scale…) | Same |
+| `MERCHANT_NOT_REGISTERED` | The QR's wallet isn't a registered merchant: possibly an edited QR | "**No pagues.** Este QR no pertenece a un comercio registrado." |
+| `MERCHANT_KEY_MISMATCH` | Signed by a key other than the merchant's registered one | Same as above |
+| `INVALID_SALE_SIGNATURE` | Content was altered after signing (amount, currency, wallet…) | Same as above |
+| `SALE_ID_REUSED` | This saleId already exists with different content | "Este QR ya fue usado. Pide al comercio uno nuevo." |
+
+Re-sending the same sale (same content) is idempotent.
+
 ## Payer flow
 
 ```
@@ -70,17 +120,18 @@ Don't do arithmetic on these strings in the UI; show them as they come.
 | GET | `/api/health` | – | `{ status, mode, modeLabel }` |
 | GET | `/api/receipt-key` | – | `{ keyId, alg: 'ES256', publicKeyJwk }`: **pin this on the merchant device while online** |
 | GET | `/api/config` | – | `{ receiptKey: {keyId, alg, publicKeyJwk}, defaultMerchant: {id,name,walletAddress}, mode, modeLabel }` |
-| POST | `/api/sales` | `PaymentSaleRequest` (required: `saleId, merchantWalletAddress, amount, currency`; others defaulted) | `{ sale }` (idempotent) |
+| POST | `/api/merchants/register` | `{ merchantWallet, publicKeyJwk }` | 201 `{ merchantWallet, keyId, alreadyRegistered: false }` · 200 same key · 409 `KEY_ALREADY_REGISTERED` · 403 `MERCHANT_NOT_ALLOWED` · 400 `INVALID_KEY` |
+| POST | `/api/sales` | signed `PaymentSaleRequest` v2 (all fields required) | `{ sale }`. Idempotent for identical content; 400 with a sale `reason` otherwise |
 | GET | `/api/sales` | – | `{ sales }` (last 50) |
 | GET | `/api/sales/:saleId` | – | `{ sale (with status), receipt \| null }` |
 | POST | `/api/wallet/resolve` | `{ walletAddress }` (`$ilp...` accepted) | `{ wallet: { id, assetCode, assetScale, authServer, resourceServer } }` |
-| POST | `/api/payments/quote` | `{ sale, payerWalletAddress }` | `{ quote: CurrencyQuote }`. 409 if already paid, 410 if the sale expired |
+| POST | `/api/payments/quote` | `{ sale (signed v2), payerWalletAddress }` | `{ quote: CurrencyQuote }`. 400 + sale `reason` if the signature check fails, 409 if already paid, 410 if the sale expired |
 | POST | `/api/payments/authorize` | `{ quoteId }` | `{ requoted: false, paymentId, redirectUrl }` or `{ requoted: true, quote }` (quote expiring in < 60 s) |
 | GET | `/api/payments/callback` | set by the backend (GNAP finish) | 302 to the frontend (see reasons above) |
 | GET | `/api/payments/:paymentId` | – | `{ paymentId, saleId, attemptStatus, saleStatus, error?, hashCheck?: MATCH\|MISMATCH\|ABSENT, quote }` (see "Two status vocabularies") |
 | POST | `/api/payments/verify` | `{ saleId }` | `{ status: 'PAYMENT_VERIFIED', receipt }` or `{ status: 'PROCESSING', receivedAmount, expectedAmount }` |
 | GET | `/api/receipts/:saleId` | – | `{ receipt: VerifiedReceipt }` or 404 |
-| POST | `/api/sync` | `OfflineSyncRecord[]` | `{ syncedCount, totalReceived, rejected: [{saleId, reason: INVALID_SIGNATURE\|MODE_MISMATCH}] }` |
+| POST | `/api/sync` | `OfflineSyncRecord[]` | `{ syncedCount, totalReceived, rejected: [{saleId, reason: INVALID_SIGNATURE\|MODE_MISMATCH\|<sale reason>}] }` |
 
 ## Two status vocabularies
 

@@ -4,6 +4,7 @@
 
 import {
   PaymentSaleRequest,
+  UnsignedSale,
   VerifiedReceipt,
   UnsignedReceipt,
   ReceiptKeyInfo,
@@ -13,6 +14,7 @@ import {
   canonicalJson,
   computeSha256,
   computeJwkThumbprint,
+  exportKeyToJwk,
   importPublicKeyFromJwk,
   signData,
   verifySignature,
@@ -36,37 +38,104 @@ function fromBase64UrlString(b64: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+const SALE_QR_PREFIX = 'relevo:sale:v2:';
+
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+
 /**
- * Encode a PaymentSaleRequest into a compact QR payload
+ * Generates the merchant device key: ECDSA P-256, private key NON-extractable
+ * (it can sign but can never be exported, even by our own code). Store the
+ * CryptoKeyPair in IndexedDB as is; register the public key while online.
  */
-export function encodeSaleToQr(sale: PaymentSaleRequest): string {
-  const json = JSON.stringify(sale);
-  return `relevo:sale:v1:${toBase64UrlString(json)}`;
+export async function generateMerchantKeyPair(): Promise<{ keyPair: CryptoKeyPair; publicKeyJwk: JsonWebKey; keyId: string }> {
+  const keyPair = (await getSubtleForSales().generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'])) as CryptoKeyPair;
+  const publicKeyJwk = await exportKeyToJwk(keyPair.publicKey);
+  return { keyPair, publicKeyJwk, keyId: await computeJwkThumbprint(publicKeyJwk) };
+}
+
+function getSubtleForSales(): SubtleCrypto {
+  if (!globalThis.crypto?.subtle) throw new Error('Web Crypto API (crypto.subtle) is not available in this environment.');
+  return globalThis.crypto.subtle;
+}
+
+/** Canonical content covered by the merchant signature (explicit field list). */
+export function getSalePayloadForSigning(sale: UnsignedSale & { merchantKeyId: string }): string {
+  return canonicalJson({
+    version: sale.version,
+    saleId: sale.saleId,
+    merchantId: sale.merchantId,
+    merchantName: sale.merchantName,
+    merchantWalletAddress: sale.merchantWalletAddress,
+    amount: sale.amount,
+    currency: sale.currency,
+    assetScale: sale.assetScale,
+    createdAt: sale.createdAt,
+    expiresAt: sale.expiresAt,
+    nonce: sale.nonce,
+    merchantKeyId: sale.merchantKeyId,
+  });
+}
+
+/** Signs a sale on the merchant device with its (non-extractable) private key. */
+export async function signSale(unsigned: UnsignedSale, privateKey: CryptoKey, merchantKeyId: string): Promise<PaymentSaleRequest> {
+  const withKey = { ...unsigned, merchantKeyId };
+  const digest = await computeSha256(getSalePayloadForSigning(withKey));
+  return { ...withKey, merchantSignature: await signData(digest, privateKey) };
+}
+
+/** Structural validation of an untrusted object claiming to be a signed v2 sale. */
+export function isSaleV2(value: unknown): value is PaymentSaleRequest {
+  const s = value as Partial<PaymentSaleRequest> | null;
+  return (
+    !!s &&
+    typeof s === 'object' &&
+    s.version === '2' &&
+    isStr(s.saleId) &&
+    typeof s.merchantId === 'string' &&
+    typeof s.merchantName === 'string' &&
+    isStr(s.merchantWalletAddress) &&
+    isStr(s.amount) &&
+    isStr(s.currency) &&
+    Number.isInteger(s.assetScale) &&
+    Number.isFinite(s.createdAt) &&
+    Number.isFinite(s.expiresAt) &&
+    isStr(s.nonce) &&
+    isStr(s.merchantKeyId) &&
+    isStr(s.merchantSignature)
+  );
+}
+
+/** True only if the sale is a well-formed v2 sale signed by `publicKey`. */
+export async function verifySale(sale: unknown, publicKey: CryptoKey): Promise<boolean> {
+  if (!isSaleV2(sale)) return false;
+  const digest = await computeSha256(getSalePayloadForSigning(sale));
+  return verifySignature(digest, sale.merchantSignature, publicKey);
+}
+
+/** Same signed content? (ECDSA signatures are randomized, so compare the payload, not the signature.) */
+export function sameSaleContent(a: PaymentSaleRequest, b: PaymentSaleRequest): boolean {
+  return getSalePayloadForSigning(a) === getSalePayloadForSigning(b);
 }
 
 /**
- * Parse a QR code string into a PaymentSaleRequest
+ * Encode a signed sale into a compact QR payload
+ */
+export function encodeSaleToQr(sale: PaymentSaleRequest): string {
+  return `${SALE_QR_PREFIX}${toBase64UrlString(JSON.stringify(sale))}`;
+}
+
+/**
+ * Parse a sale QR (structure only; the backend verifies the signature on quote)
  */
 export function parseSaleFromQr(qrContent: string): PaymentSaleRequest | null {
   try {
     const trimmed = qrContent.trim();
-    if (trimmed.startsWith('relevo:sale:v1:')) {
-      const b64 = trimmed.substring('relevo:sale:v1:'.length);
-      const json = fromBase64UrlString(b64);
-      const parsed = JSON.parse(json) as PaymentSaleRequest;
-      if (parsed.version === '1' && parsed.saleId && parsed.amount && parsed.currency) {
-        return parsed;
-      }
-    }
-    // Fallback: direct JSON
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      const parsed = JSON.parse(trimmed) as PaymentSaleRequest;
-      if (parsed.saleId && parsed.amount) return parsed;
-    }
-  } catch (err) {
-    console.warn('Failed to parse sale QR payload:', err);
+    if (!trimmed.startsWith(SALE_QR_PREFIX)) return null;
+    const parsed: unknown = JSON.parse(fromBase64UrlString(trimmed.substring(SALE_QR_PREFIX.length)));
+    return isSaleV2(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** Normalizes "$ilp.example/alice", "ilp.example/alice/" etc. to "https://ilp.example/alice". */
@@ -110,8 +179,6 @@ export async function signReceipt(unsigned: UnsignedReceipt, privateKey: CryptoK
   const backendSignature = await signData(payloadDigest, privateKey);
   return { ...unsigned, payloadDigest, backendSignature };
 }
-
-const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 
 /** Structural validation of an untrusted object claiming to be a v2 receipt. */
 export function isReceiptV2(value: unknown): value is VerifiedReceipt {
