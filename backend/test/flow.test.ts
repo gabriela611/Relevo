@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import type { WalletInfo } from '../src/services/gateways/gateway.js';
+import type { IncomingPaymentStatus, WalletInfo } from '../src/services/gateways/gateway.js';
 
 // Configure before any backend module reads config.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-test-'));
@@ -327,6 +327,52 @@ test('golden rule: no receipt is signed when funds never arrive', async () => {
   } finally {
     openPaymentsService.useGateway(new SimulatorGateway());
     delete (openPaymentsService as { verifyPayment?: unknown }).verifyPayment;
+  }
+});
+
+test('golden rule: partial payment, wrong currency or a short incoming payment never get a receipt; exact amount does', async () => {
+  const { config } = await import('../src/config.js');
+  class Tamper extends SimulatorGateway {
+    constructor(private mutate: (s: IncomingPaymentStatus) => IncomingPaymentStatus) {
+      super();
+    }
+    override async getIncomingPayment(merchant: WalletInfo, id: string) {
+      return this.mutate(await super.getIncomingPayment(merchant, id));
+    }
+  }
+  const cases: Array<[string, (s: IncomingPaymentStatus) => IncomingPaymentStatus, boolean]> = [
+    ['partial payment (14.99 of 15.00)', (s) => ({ ...s, receivedAmount: { ...s.receivedAmount, value: '1499' } }), false],
+    // Incoming payment and funds both in EUR: check 1 passes, check 2 (sale currency) must refuse.
+    [
+      'wrong currency',
+      (s) => ({ ...s, incomingAmount: { ...s.incomingAmount!, assetCode: 'EUR' }, receivedAmount: { ...s.receivedAmount, assetCode: 'EUR' } }),
+      false,
+    ],
+    // Incoming payment asked for less than the sale and was "fully paid": check 2 must refuse.
+    [
+      'incoming payment shorter than the sale',
+      (s) => ({ ...s, incomingAmount: { ...s.incomingAmount!, value: '1000' }, receivedAmount: { ...s.receivedAmount, value: '1000' } }),
+      false,
+    ],
+    ['different scale for the same value', (s) => ({ ...s, receivedAmount: { ...s.receivedAmount, assetScale: 3 } }), false],
+    ['exact amount', (s) => s, true],
+  ];
+  const savedTimeout = config.verifyTimeoutMs;
+  config.verifyTimeoutMs = 0;
+  try {
+    for (const [label, mutate, expectReceipt] of cases) {
+      openPaymentsService.useGateway(new Tamper(mutate));
+      const sale = newSale();
+      const { redirectUrl } = await quoteAndAuthorize(sale);
+      const cb = await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
+      const payment = new URL(cb.headers.location as string).searchParams.get('payment');
+      const receiptRes = await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` });
+      assert.equal(payment, expectReceipt ? 'success' : 'pending', label);
+      assert.equal(receiptRes.statusCode, expectReceipt ? 200 : 404, label);
+    }
+  } finally {
+    config.verifyTimeoutMs = savedTimeout;
+    openPaymentsService.useGateway(new SimulatorGateway());
   }
 });
 

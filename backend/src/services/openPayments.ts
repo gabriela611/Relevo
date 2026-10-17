@@ -3,7 +3,7 @@ import { CurrencyQuote, PaymentSaleRequest, PaymentState, VerifiedReceipt } from
 import { backendCrypto } from './cryptoService.js';
 import { dbService, type HashCheck, type PaymentAttempt } from './db.js';
 import { config, type OpMode } from '../config.js';
-import { effectiveRate, fromMinorUnits, toMinorUnits } from '@relevo/shared';
+import { effectiveRate, fromMinorUnits, isAtLeast, toMinorUnits } from '@relevo/shared';
 import { computeInteractHash, normalizeWalletAddress, type Amount, type PaymentGateway, type WalletInfo } from './gateways/gateway.js';
 import { LiveOpenPaymentsGateway } from './gateways/live.js';
 import { SimulatorGateway } from './gateways/simulator.js';
@@ -261,13 +261,24 @@ export class OpenPaymentsService {
 
     const merchant = await this.resolveWalletAddress(sale.merchantWalletAddress);
     const deadline = Date.now() + timeoutMs;
+    const saleAmount = { value: toMinorUnits(sale.amount, sale.assetScale).toString(), assetScale: sale.assetScale };
 
     while (true) {
       const incoming = await this.gateway.getIncomingPayment(merchant, attempt.incomingPaymentId);
       const expected = incoming.incomingAmount ?? attempt.receiveAmount;
-      const received = BigInt(incoming.receivedAmount.value);
+      const got = incoming.receivedAmount;
 
-      if (received >= BigInt(expected.value) && incoming.receivedAmount.assetCode === expected.assetCode) {
+      // Golden rule, two independent checks; both must hold before anything is signed:
+      // 1. the incoming payment is fully paid (same asset and scale as it requested);
+      const coversIncoming =
+        got.assetCode === expected.assetCode &&
+        got.assetScale === expected.assetScale &&
+        BigInt(got.value) >= BigInt(expected.value);
+      // 2. what arrived covers the SALE itself, in the sale's currency (scale-normalized),
+      //    so a wrong or tampered incoming payment can never produce a receipt.
+      const coversSale = got.assetCode.toUpperCase() === sale.currency.toUpperCase() && isAtLeast(got, saleAmount);
+
+      if (coversIncoming && coversSale) {
         const receipt = await backendCrypto.issueSignedReceipt({
           receiptId: randomUUID(),
           saleId,

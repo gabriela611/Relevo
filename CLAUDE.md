@@ -19,7 +19,7 @@ Hackathon MVP (Open Payments / Interledger). PWA where a merchant receives cross
 - `npm run keys:generate --workspace=backend` (once; never overwrites) · `npm run smoke:live --workspace=backend` (real flow, needs live creds)
 
 ## Rules that must not break
-- **Golden rule:** never sign a receipt or mark a sale paid without reading the merchant's incoming payment and confirming `receivedAmount >= incomingAmount`. Authorization or a completed outgoing payment is not proof.
+- **Golden rule:** never sign a receipt or mark a sale paid without reading the merchant's incoming payment and confirming `receivedAmount >= incomingAmount` (same asset and scale) AND `receivedAmount >= sale.amount` in the sale's currency (`isAtLeast`). Authorization or a completed outgoing payment is not proof.
 - **Explicit mode, no fallback:** never auto-detect the mode or fall back to the simulator in live mode; Open Payments errors must surface as errors. Simulator receipts carry `mode: "simulator"` inside the signed payload.
 - **Receipt v2** binds saleId, merchantWallet, amount {value, assetCode, assetScale}, incoming/outgoing ids, issuedAt, keyId, mode. No payer data. Any change to signed fields must update `getReceiptPayloadForSigning`, `isReceiptV2`, the verifier and the tests together.
 - **Signing key is stable:** live mode refuses to start without the key file; never add code that regenerates it automatically outside the simulator.

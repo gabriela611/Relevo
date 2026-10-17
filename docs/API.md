@@ -85,7 +85,7 @@ Sale status (`sale.status`): `WAITING_PAYMENT → AUTHORIZATION_PENDING → PROC
 
 ## Receipt v2 (what the buyer shows as a QR)
 
-The backend signs a receipt only after reading the merchant's incoming payment and confirming `receivedAmount >= incomingAmount`. Every field except `payloadDigest` and `backendSignature` is signed. It contains **no payer data**.
+The backend signs a receipt only after reading the merchant's incoming payment and confirming both: (1) it is fully paid in the asset and scale it requested, and (2) what arrived is at least the **sale** amount in the sale's currency (exact, scale-normalized). A partial payment, a payment in another currency, or an incoming payment for less than the sale never produces a receipt; the attempt stays `PROCESSING`. Every field except `payloadDigest` and `backendSignature` is signed. It contains **no payer data**.
 
 ```ts
 {
