@@ -79,7 +79,12 @@ export class OpenPaymentsService {
       throw new Error('OP_MODE=live requiere OPEN_PAYMENTS_KEY_ID y OPEN_PAYMENTS_PRIVATE_KEY_PATH en backend/.env.');
     }
     try {
-      this._gateway = await LiveOpenPaymentsGateway.create({ walletAddressUrl: clientWalletAddress, keyId, privateKey });
+      this._gateway = await LiveOpenPaymentsGateway.create({
+        walletAddressUrl: clientWalletAddress,
+        keyId,
+        privateKey,
+        requestTimeoutMs: config.opRequestTimeoutMs,
+      });
     } catch (err: any) {
       throw new Error(`No se pudo iniciar el cliente Open Payments (live) como ${clientWalletAddress}: ${err?.description || err?.message || err}`);
     }

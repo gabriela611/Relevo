@@ -110,7 +110,18 @@ relevo/
 
 ---
 
-## Primeros pasos (desarrollo local)
+## ✅ Verified live
+
+El 2026-10-17 el flujo completo pasó contra la **Interledger Test Wallet** (`OP_MODE=live`):
+- Pago entre monedas: comprador en EUR → comercio en USD, con cotización *fixed-receive*.
+- Hash de interacción GNAP: `MATCH`.
+- Fondos verificados en el incoming payment del comercio antes de firmar.
+- Recibo v2 verificado offline (`LIVE_PAYMENT`) solo con la llave pública fijada.
+- Un recibo alterado fue rechazado (`INVALID_SIGNATURE`).
+
+Salida completa: [docs/LIVE-TEST-RESULT.md](docs/LIVE-TEST-RESULT.md).
+
+## 🚀 Primeros Pasos (Desarrollo Local)
 
 ### Prerrequisitos
 - Node.js >= 20 (recomendado Node 24)
