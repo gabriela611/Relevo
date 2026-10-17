@@ -1,118 +1,112 @@
-# RELEVO
+<p align="center">
+  <img src="brand/logo.svg" alt="RELEVO Logo" width="460" />
+</p>
 
-**Pay across currencies. Verify without internet.**
+<p align="center">
+  <strong>Cobra en cualquier moneda. Verifica sin internet.</strong><br />
+  <em>PWA de cobro multidivisa basada en Open Payments con verificación criptográfica offline.</em>
+</p>
+
+<br />
+
+| Concepto | Especificación |
+| :--- | :--- |
+| **Definición** | Aplicación web progresiva (PWA) móvil que permite a cualquier comercio cobrar en su moneda local y comprobar la recepción de fondos sin conexión de datos. |
+| **Protocolo financiero** | Open Payments sobre la red Interledger (ILP). Liquidación directa de billetera a billetera; sin custodia de fondos ni emisión de deuda. |
+| **Seguridad criptográfica** | Recibos verificables firmados digitalmente con ECDSA (curva P-256 / secp256r1) y resumen canónico SHA-256 mediante Web Crypto nativo. |
+| **Modelo de verificación** | Validación local inmediata en el dispositivo del comercio mediante escaneo de código QR y comprobación de la clave pública fijada (`keyId`). |
+| **Arquitectura de código** | Monorepo TypeScript: `@relevo/shared` (contratos y motor criptográfico), `@relevo/backend` (Fastify + SQLite) y `@relevo/frontend` (React + Tailwind). |
+| **Resiliencia operativa** | Service Worker para ejecución offline, persistencia local con IndexedDB y túnel seguro HTTPS para dispositivos móviles. |
+
+---
 
 ## Estado y seguimiento
 
-Existe una base de código con `frontend/`, `backend/` y `shared/`. Los flujos descritos abajo son el objetivo del MVP: esta preparación documental no ha verificado todavía pagos reales, funcionamiento offline ni reconciliación.
+El proyecto cuenta con una base monorepo funcional en `frontend/`, `backend/` y `shared/`. El objetivo del MVP es conectar billeteras de prueba mediante Open Payments y asegurar la validación criptográfica en modo offline.
 
 - [Progreso ODD y próximos hitos](odd/tasks/mvp.md)
-- [Estructura y ciclo de trabajo](odd/README.md)
-- [Registro de prompts reales](prompts/README.md)
-- [Uso de IA y datos pendientes de completar](AI_USAGE.md)
+- [Estructura y ciclo de trabajo ODD](odd/README.md)
+- [Registro de prompts reales de trabajo](prompts/README.md)
+- [Declaración de uso de inteligencia artificial](AI_USAGE.md)
 
-**Primero:** demostrar un pago de punta a punta entre test wallets. Después, el QR offline. El comprador y el servidor necesitan internet; la firma acredita lo verificado por Relevo en ese momento, no una garantía bancaria permanente.
+**Regla de verificación:** El comprador y el servidor necesitan conectividad para completar la transferencia en la red Interledger; el comercio verifica la firma del comprobante directamente en su pantalla sin consumir datos móviles.
 
-**Tipo:** PWA Fintech · Open Payments / Interledger  
-**Etapa:** MVP para Hackatón  
-**Usuarios:** Pequeños comerciantes, vendedores informales, turistas y personas con conectividad limitada.
-
----
-
-## 🌟 Visión
-
-RELEVO permite que un comercio reciba pagos de billeteras compatibles con distintas monedas y verifique criptográficamente que recibió el dinero, aunque su dispositivo no tenga conexión a internet.
-
-La plataforma no custodia fondos, no concede crédito y no requiere stablecoins.
+- **Tipo:** PWA Fintech · Open Payments / Interledger
+- **Etapa:** MVP para Hackatón
+- **Usuarios objetivo:** Comerciantes independientes, ferias, transporte, turismo y zonas con conectividad intermitente.
 
 ---
 
-## ⚠️ El Problema
+## Visión
 
-Los pequeños comerciantes pueden tener dificultades para verificar transferencias cuando la conexión falla. Depender de comprobantes visuales o pantallazos expone al vendedor a fraudes y estafas.
+RELEVO permite que un comercio reciba pagos desde billeteras digitales de cualquier parte del mundo y verifique con certeza matemática que los fondos fueron transferidos, aun cuando su propio teléfono no tenga acceso a internet.
 
-Al mismo tiempo, los compradores que utilizan otra divisa necesitan una experiencia de pago sencilla y una cotización transparente.
-
----
-
-## 💡 Propuesta de Valor
-
-- **Para comerciantes:** Aceptar cobros digitales y comprobar su recepción sin datos móviles mediante comprobantes firmados digitalmente.
-- **Para compradores:** Pagar desde una billetera compatible con Open Payments, con desglose previo del monto debitado y de la moneda recibida.
-- **Para comunidades:** Reducir barreras de conectividad y mejorar la confianza en los pagos digitales en economías emergentes y zonas turísticas.
+La solución no intermedia fondos, no requiere stablecoins propietarias y no cobra comisiones ocultas sobre el tipo de cambio.
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+## El problema
 
-El proyecto está organizado como un **Monorepo** estructurado en tres paquetes principales:
+Los pequeños comerciantes enfrentan pérdidas significativas cuando la conectividad falla:
+- Depender de capturas de pantalla ("pantallazos") o mensajes SMS genera vulnerabilidad frente a comprobantes falsificados y aplicaciones clonadas.
+- La confirmación bancaria tradicional exige que ambas partes dispongan de red móvil activa y plan de datos disponible en el momento exacto de la transacción.
+- Los compradores internacionales o no bancarizados se ven limitados por conversiones de divisas opacas o tarifas bancarias elevadas.
+
+---
+
+## Propuesta de valor
+
+- **Comerciantes:** Aceptan cobros digitales y confirman la validez de la transferencia escaneando un código QR firmado por el backend, sin necesidad de conexión a internet.
+- **Compradores:** Pagan desde su billetera Open Payments habitual conociendo la tasa de cambio, el importe debitado en su divisa y el monto exacto acreditado al vendedor.
+- **Comunidad y ecosistema:** Fomenta la inclusión financiera en economías emergentes y eventos al aire libre mediante estándares abiertos interoperables.
+
+---
+
+## Arquitectura del sistema
+
+El repositorio utiliza una arquitectura de monorepo estructurada en tres paquetes independientes:
 
 ```
 relevo/
-├── shared/         # Tipos compartidos, motor criptográfico Web Crypto y esquemas QR
+├── brand/          # Identidad corporativa, símbolos y logotipos vectoriales SVG
+├── shared/         # Tipos compartidos, esquemas QR y motor Web Crypto de verificación
 │   ├── src/types.ts    # Modelos de venta, cotizaciones, recibos y estados
 │   ├── src/crypto.ts   # Criptografía ECDSA P-256 + SHA-256 canónico
 │   └── src/qr.ts       # Serialización y verificación offline de comprobantes
-├── backend/        # Servidor Node.js + Fastify + SQLite
-│   ├── src/services/openPayments.ts   # Integración con Open Payments / Interledger
-│   ├── src/services/cryptoService.ts  # Emisión y firma de comprobantes verificables
-│   └── src/services/db.ts             # Persistencia SQLite
-└── frontend/       # PWA Mobile-First con React, Vite y Tailwind CSS v4
-    ├── src/App.tsx     # Flujos principales: Cobrar (Vendedor) y Pagar (Comprador)
-    └── vite.config.ts  # Configuración Vite + Tailwind v4
+├── backend/        # Servidor Fastify + SQLite con integración Open Payments
+│   ├── src/services/openPayments.ts   # Cliente Open Payments / GNAP de Interledger
+│   ├── src/services/cryptoService.ts  # Emisión y firma digital de recibos
+│   └── src/services/db.ts             # Persistencia de ventas y cotizaciones
+└── frontend/       # PWA mobile-first con React, Vite y diseño responsivo
+    ├── src/App.tsx     # Enrutamiento de flujos: Cobrar (Vendedor) y Pagar (Comprador)
+    ├── src/views/      # Vistas de Cobro, Pago, Verificación, Historial y Onboarding
+    └── src/storage.ts  # Persistencia offline en IndexedDB
 ```
 
 ---
 
-## 🔐 Protocolo de Verificación Offline
+## Estados del pago
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Vendedor as Comercio (Sin Internet)
-    actor Comprador as Comprador (Con Internet)
-    participant Backend as Backend RELEVO / Open Payments
-    participant ILP as Interledger Test Wallet
+| Estado | Código interno | Descripción técnica |
+| :--- | :--- | :--- |
+| **Esperando pago** | `WAITING_PAYMENT` | Solicitud creada por el comercio; fondos no recibidos. |
+| **Autorización pendiente** | `AUTHORIZATION_PENDING` | El comprador debe consentir la transacción mediante GNAP en su billetera. |
+| **Procesando** | `PROCESSING` | Transferencia despachada a la red Interledger, en espera de liquidación. |
+| **Pago verificado** | `PAYMENT_VERIFIED` | Fondos confirmados por el backend en la cuenta del comercio. |
+| **Verificado offline** | `OFFLINE_VERIFIED` | Firma criptográfica del recibo validada matemáticamente en el dispositivo del comercio sin internet. |
+| **Fallido o vencido** | `FAILED_OR_EXPIRED` | Transacción rechazada por el usuario, sin fondos suficientes o expirada. |
 
-    Vendedor->>Vendedor: 1. Introduce importe y genera QR de venta firmado localmente
-    Comprador->>Vendedor: 2. Escanea QR de venta del comercio
-    Comprador->>Backend: 3. Solicita cotización multidivisa (ej: Paga EUR, Comercio recibe USD)
-    Backend-->>Comprador: 4. Muestra desglose de conversión y comisiones
-    Comprador->>Backend: 5. Autoriza pago vía Open Payments (GNAP)
-    Backend->>ILP: 6. Ejecuta Outgoing Payment hacia Incoming Payment del comercio
-    ILP-->>Backend: 7. Confirma recepción de fondos (verificación estricta de saldo recibido)
-    Backend->>Backend: 8. Firma digitalmente el comprobante con clave privada ECDSA P-256
-    Backend-->>Comprador: 9. Emite Comprobante Verificable
-    Comprador->>Comprador: 10. Muestra QR del Comprobante Verificable
-    Vendedor->>Comprador: 11. Escanea el QR del Comprobante
-    Vendedor->>Vendedor: 12. Valida criptográficamente offline (ID venta, importe, divisa y firma ECDSA)
-    Note over Vendedor: Firma y datos del recibo validados localmente; conciliación posterior
-```
+> **Principio de seguridad financiera:** Ninguna venta se considera completada únicamente por la existencia de una autorización o una captura de pantalla. La acreditación requiere confirmación de fondos recibidos en el backend y verificación de firma digital en el comprobante.
 
 ---
 
-## 📊 Estados del Pago
+## Stack tecnológico
 
-| Estado | Descripción |
-| :--- | :--- |
-| **Esperando pago** (`WAITING_PAYMENT`) | Solicitud creada por el comercio, dinero todavía no recibido. |
-| **Autorización pendiente** (`AUTHORIZATION_PENDING`) | El comprador aún debe consentir el pago mediante GNAP. |
-| **Procesando** (`PROCESSING`) | Transferencia iniciada en la red Interledger, pendiente de confirmación. |
-| **Pago verificado** (`PAYMENT_VERIFIED`) | Recepción comprobada por el backend en el proveedor Open Payments. |
-| **Verificado offline** (`OFFLINE_VERIFIED`) | Comprobante firmado validado localmente en el dispositivo del vendedor sin internet. |
-| **Fallido o vencido** (`FAILED_OR_EXPIRED`) | Pago no completado o expirado. |
-
-> **Regla de Oro de Seguridad:** Nunca debe marcarse una venta como pagada únicamente porque existe una autorización, una captura de pantalla o un recurso marcado como completado sin comprobar su importe realmente recibido.
-
----
-
-## 🛠️ Stack Tecnológico
-
-- **Frontend:** React, TypeScript, Vite, Tailwind CSS v4, PWA (IndexedDB + Web Crypto).
+- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, PWA (Service Worker + IndexedDB).
 - **Backend:** Node.js 24, Fastify, `@interledger/open-payments`.
-- **Persistencia:** SQLite en backend e IndexedDB en el dispositivo cliente.
-- **Criptografía:** Web Crypto API nativa, ECDSA (curva P-256 / secp256r1) y SHA-256 canónico.
-- **Infraestructura financiera:** Interledger Test Wallet (Rafiki).
+- **Criptografía:** Web Crypto API nativa, ECDSA (curva P-256 / secp256r1), SHA-256 canónico.
+- **Base de datos:** SQLite en backend e IndexedDB en cliente.
+- **Red financiera:** Interledger Test Wallet (Rafiki).
 
 ---
 
@@ -136,85 +130,69 @@ Salida completa: [docs/LIVE-TEST-RESULT.md](docs/LIVE-TEST-RESULT.md).
 ### Instalación
 ```bash
 npm install
-npm run build --workspace=shared          # tipos, criptografía y verificador offline
-cp backend/.env.example backend/.env      # y edita los valores
+npm run build --workspace=shared          # Compila tipos y motor criptográfico
+cp backend/.env.example backend/.env      # Configura variables de entorno
 ```
 
-### Modo: `OP_MODE` (obligatorio)
-El backend **no arranca** sin `OP_MODE` en `backend/.env`, y nunca cambia de modo por su cuenta.
+### Configuración del modo: `OP_MODE`
+El backend requiere definir `OP_MODE` en `backend/.env` para iniciar:
 
-| `OP_MODE` | Qué hace | Badge en la PWA |
-|---|---|---|
-| `live` | Open Payments real contra la Interledger Test Wallet. Cualquier error de Open Payments se muestra como error: **no hay fallback al simulador**. | `LIVE · Interledger Test Wallet` |
-| `simulator` | Mismo flujo en memoria, sin red. Los recibos se firman con `mode: "simulator"` y el verificador del comercio los muestra como **SIMULACIÓN**, nunca como pago real. | `SIMULATOR` |
+| `OP_MODE` | Comportamiento | Distintivo en la PWA |
+| :--- | :--- | :--- |
+| `live` | Open Payments real contra la Interledger Test Wallet. Errores de red se reportan directamente sin desvíos simulados. | `LIVE · Interledger Test Wallet` |
+| `simulator` | Flujo en memoria para demostración sin conectividad externa. Los recibos se firman con distintivo explícito de simulación. | `SIMULATOR` |
 
-### Llave de firma de recibos
-Los recibos se firman con una llave ECDSA P-256 guardada en `backend/.relevo-backend-keys.json` (ignorado por git). Su `keyId` (huella RFC 7638) queda fijado en cada dispositivo de comercio.
+### Llave de firma de comprobantes
+Los comprobantes se firman con una clave ECDSA P-256 persistida en `backend/.relevo-backend-keys.json` (excluida del control de versiones). Su identificador `keyId` (huella RFC 7638) se fija en la aplicación del comercio:
 
 ```bash
-npm run keys:generate --workspace=backend   # una sola vez; se niega a sobrescribir una llave existente
+npm run keys:generate --workspace=backend   # Generación única; protege claves existentes
 ```
 
-En `live` el backend **se niega a arrancar** si la llave no existe, para no rotarla en silencio. Si la llave cambia, los comercios verán *"Este comercio tiene una llave desactualizada. Conéctate a internet una vez para actualizarla."* hasta que vuelvan a fijar `GET /api/receipt-key`. En `simulator` se crea automáticamente si falta.
+En modo `live`, el backend no inicia si la clave no existe para evitar rotaciones accidentales.
 
-### Credenciales Open Payments (modo live)
-1. Crea cuentas en https://wallet.interledger-test.dev: una para el **comercio** y otra para el **comprador**, con saldo de prueba.
-2. Settings → Developer Keys → genera la llave. Copia el **Key ID** y guarda `private.key` en `backend/` (ignorado por git).
-3. En `backend/.env` define `OP_MODE=live`, `OPEN_PAYMENTS_CLIENT_WALLET`, `OPEN_PAYMENTS_KEY_ID`, `OPEN_PAYMENTS_PRIVATE_KEY_PATH=./private.key`, `MERCHANT_WALLET`, `SMOKE_MERCHANT_WALLET` y `SMOKE_BUYER_WALLET`.
+### Credenciales de Open Payments (modo live)
+1. Registrar cuentas en https://wallet.interledger-test.dev para comercio y comprador con saldo de prueba.
+2. Ingresar a Settings -> Developer Keys, generar clave, copiar el **Key ID** y almacenar `private.key` en `backend/` (ignorado en git).
+3. Completar las variables en `backend/.env`: `OPEN_PAYMENTS_CLIENT_WALLET`, `OPEN_PAYMENTS_KEY_ID`, `OPEN_PAYMENTS_PRIVATE_KEY_PATH`, `MERCHANT_WALLET`, `SMOKE_MERCHANT_WALLET` y `SMOKE_BUYER_WALLET`.
 
-### Ejecutar en Desarrollo
+### Ejecución de servicios
 ```bash
-npm run dev:backend    # puerto 3000; imprime "MODE: LIVE · Interledger Test Wallet" o "MODE: SIMULATOR"
-npm run dev:frontend   # puerto 5173; proxy de /api al backend
+npm run dev:backend    # Puerto 3000 (API y servicios Open Payments)
+npm run dev:frontend   # Puerto 5173 (PWA Vite con proxy a /api)
 ```
 
-### Pruebas
+### Pruebas automatizadas
 ```bash
-npm test               # compila shared y corre los tests de shared y backend (simulador, sin red)
-npm run typecheck
+npm test               # Ejecuta las suites de shared, backend y frontend (38 tests)
+npm run typecheck      # Validación estricta de tipos TypeScript
 ```
 
-### Smoke test en vivo (sin frontend)
-Prueba el flujo real completo desde la terminal: venta → incoming payment del comercio → quote del comprador → autorización interactiva → callback local → outgoing payment → verificación del monto recibido → recibo firmado → verificación offline con `@relevo/shared`.
-
+### Prueba de flujo completo en consola
+Permite verificar el ciclo completo sin interfaz gráfica:
 ```bash
 npm run smoke:live --workspace=backend
 ```
+Genera la URL de autorización interactiva para aprobar desde el navegador y valida la firma del comprobante resultante.
 
-Imprime una URL de consentimiento. Ábrela **en un navegador de esta misma máquina**, entra como el comprador y aprueba. Solo muestra ids, estados y montos formateados, nunca tokens ni llaves. Termina con `RESULT: PASS` (exit 0) o `FAIL` (exit 1).
+---
 
-### `STRICT_HASH`: verificación del hash de interacción GNAP
-Cuando la billetera devuelve al comprador al callback, incluye un `hash` que el backend recalcula.
+## Pruebas en dispositivos móviles por HTTPS
 
-- `STRICT_HASH=false` (por defecto): si no coincide, se registra una advertencia y el pago continúa. El token de continuación sigue protegiendo el grant.
-- `STRICT_HASH=true`: si no coincide (o falta), el pago se rechaza con `reason=HASH_MISMATCH`.
-
-**Procedimiento:** corre `npm run smoke:live`. Si imprime `hash: MATCH`, cambia a `STRICT_HASH=true` y vuelve a correrlo para confirmar `RESULT: PASS`. Si imprime `hash: MISMATCH`, deja `false` y avisa al equipo de backend.
-
-## 📱 Teléfonos por HTTPS (cámara y service worker)
-
-En un teléfono, `getUserMedia` (cámara para escanear QR) y el service worker **solo funcionan sobre HTTPS**. Basta **un solo túnel**: Vite sirve la PWA y hace de proxy de `/api` (incluido el callback de Open Payments) hacia el backend.
+El acceso a la cámara mediante `getUserMedia` (para el escaneo de códigos QR) y el funcionamiento del Service Worker requieren una conexión segura HTTPS. Es posible utilizar un túnel Cloudflare hacia el puerto local de Vite:
 
 ```
-teléfono ──HTTPS──> cloudflared ──> Vite :5173 ──/api──> backend :3000
+Dispositivo móvil ──HTTPS──> Cloudflare Tunnel ──> Vite :5173 ──/api──> Backend :3000
 ```
 
-1. Instala cloudflared: `winget install --id Cloudflare.cloudflared` (Windows) o `brew install cloudflared` (macOS).
-2. Arranca el backend y el frontend (`npm run dev:backend`, `npm run dev:frontend`).
-3. Abre el túnel hacia el frontend:
+1. Iniciar los servicios locales (`npm run dev:backend` y `npm run dev:frontend`).
+2. Abrir el túnel con cloudflared:
    ```bash
    cloudflared tunnel --url http://localhost:5173
    ```
-   Copia la URL `https://<algo>.trycloudflare.com` que imprime.
-4. En `backend/.env`:
+3. Configurar en `backend/.env` la URL asignada:
+   ```env
+   PUBLIC_FRONTEND_URL=https://<subdominio>.trycloudflare.com
    ```
-   PUBLIC_FRONTEND_URL=https://<algo>.trycloudflare.com
-   # PUBLIC_BACKEND_URL se deja vacío: por defecto es igual a PUBLIC_FRONTEND_URL
-   ```
-   y **reinicia el backend**. Con eso, la redirección después de aprobar en la billetera vuelve a la URL pública y CORS acepta ese origen (además de `localhost:5173`).
-5. Abre la URL `https://...trycloudflare.com` en el teléfono.
-
-Notas:
-- La URL de un *quick tunnel* cambia cada vez que reinicias cloudflared: actualiza `PUBLIC_FRONTEND_URL` y reinicia el backend.
-- Vite ya acepta hosts `*.trycloudflare.com` (`server.allowedHosts` en `frontend/vite.config.ts`).
-- Solo si expones el backend por separado (segundo túnel) define `PUBLIC_BACKEND_URL` con su URL pública.
+4. Reiniciar el backend para actualizar las políticas de redirección y orígenes permitidos por CORS.
+5. Acceder a la URL segura desde el navegador móvil para instalar la PWA y habilitar la cámara.

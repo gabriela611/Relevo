@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 140" width="680" height="140">
+  <g transform="translate(16, 16) scale(0.421875)">
+    <defs>
+      <clipPath id="logo-white-split-top">
+        <polygon points="0,0 234,0 0,234"/>
+      </clipPath>
+      <clipPath id="logo-white-split-bottom">
+        <polygon points="234,0 256,0 256,256 0,256 0,234"/>
+      </clipPath>
+    </defs>
+
+    <!-- Fondo A -->
+    <path d="M 33.91 200.09 A 52 52 0 0 1 28 176 L 28 80 A 52 52 0 0 1 80 28 L 176 28 A 52 52 0 0 1 200.09 33.91 Z" fill="#CFFA86"/>
+    <path d="M 222.09 55.91 A 52 52 0 0 1 228 80 L 228 176 A 52 52 0 0 1 176 228 L 80 228 A 52 52 0 0 1 55.91 222.09 Z" fill="#FFFFFF"/>
+
+    <!-- R B Sólida Continua -->
+    <g clip-path="url(#logo-white-split-top)">
+      <rect x="64" y="48" width="36" height="160" rx="10" fill="#260F61"/>
+      <path d="M 80 48 H 140 A 56 56 0 0 1 140 160 H 80 Z M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#260F61" fill-rule="evenodd"/>
+      <path d="M 90 146 L 190 200" stroke="#260F61" stroke-width="36" stroke-linecap="round"/>
+      <path d="M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#CFFA86"/>
+    </g>
+
+    <g clip-path="url(#logo-white-split-bottom)">
+      <rect x="64" y="48" width="36" height="160" rx="10" fill="#CFFA86"/>
+      <path d="M 80 48 H 140 A 56 56 0 0 1 140 160 H 80 Z M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#CFFA86" fill-rule="evenodd"/>
+      <path d="M 90 146 L 190 200" stroke="#CFFA86" stroke-width="36" stroke-linecap="round"/>
+      <path d="M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#260F61"/>
+    </g>
+  </g>
+
+  <!-- Wordmark in White -->
+  <text x="150" y="80" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-size="52" font-weight="900" letter-spacing="-1" fill="#FFFFFF">RELEVO</text>
+  <!-- Slogan in Lime -->
+  <text x="152" y="108" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#CFFA86">COBRA EN CUALQUIER MONEDA · VERIFICA SIN INTERNET</text>
+</svg>

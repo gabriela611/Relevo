@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="28 28 200 200" width="512" height="512">
+  <defs>
+    <!-- Seamless diagonal seam at 45 degrees without breaking the letter R -->
+    <clipPath id="app-split-top">
+      <polygon points="0,0 234,0 0,234"/>
+    </clipPath>
+    <clipPath id="app-split-bottom">
+      <polygon points="234,0 256,0 256,256 0,256 0,234"/>
+    </clipPath>
+  </defs>
+
+  <!-- Fondo Concepto A: Cuadrado redondeado cortado en dos piezas que se pasan el relevo -->
+  <!-- Pieza superior izquierda: Verde Lima (#CFFA86) -->
+  <path d="M 33.91 200.09 A 52 52 0 0 1 28 176 L 28 80 A 52 52 0 0 1 80 28 L 176 28 A 52 52 0 0 1 200.09 33.91 Z" fill="#CFFA86"/>
+  <!-- Pieza inferior derecha: Morado Profundo (#260F61) -->
+  <path d="M 222.09 55.91 A 52 52 0 0 1 228 80 L 228 176 A 52 52 0 0 1 176 228 L 80 228 A 52 52 0 0 1 55.91 222.09 Z" fill="#260F61"/>
+
+  <!-- R Concepto B: Sólida y continua (sin hueco ni partición en la mitad) -->
+  <!-- Mitad superior de la R: Morado (#260F61) con rombo testigo lima -->
+  <g clip-path="url(#app-split-top)">
+    <rect x="64" y="48" width="36" height="160" rx="10" fill="#260F61"/>
+    <path d="M 80 48 H 140 A 56 56 0 0 1 140 160 H 80 Z M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#260F61" fill-rule="evenodd"/>
+    <path d="M 90 146 L 190 200" stroke="#260F61" stroke-width="36" stroke-linecap="round"/>
+    <!-- Rombo testigo interior -->
+    <path d="M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#CFFA86"/>
+  </g>
+
+  <!-- Mitad inferior de la R: Lima (#CFFA86) con rombo morado -->
+  <g clip-path="url(#app-split-bottom)">
+    <rect x="64" y="48" width="36" height="160" rx="10" fill="#CFFA86"/>
+    <path d="M 80 48 H 140 A 56 56 0 0 1 140 160 H 80 Z M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#CFFA86" fill-rule="evenodd"/>
+    <path d="M 90 146 L 190 200" stroke="#CFFA86" stroke-width="36" stroke-linecap="round"/>
+    <!-- Rombo interior -->
+    <path d="M 140 84 L 160 104 L 140 124 L 120 104 Z" fill="#260F61"/>
+  </g>
+</svg>

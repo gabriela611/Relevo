@@ -9,9 +9,11 @@ El [tablero del MVP](tasks/mvp.md) es la fuente de progreso: especificaciones, t
 | `frontend/` | Interfaz React y experiencia del vendedor/comprador |
 | `backend/` | API, integración Open Payments, firma y persistencia del servidor |
 | `shared/` | Tipos y utilidades compartidas |
-| `odd/tasks/` | Seguimiento por resultado, criterios y comprobaciones |
+| `odd/tasks/mvp.md` | Tablero general de progreso del MVP (T0–T7) |
+| `odd/tasks/frontend-design-system.md` | Sistema de diseño frontend y UX mobile-first (T1–T3) |
 | `prompts/` | Solicitudes reales a las herramientas de IA |
 | `AI_USAGE.md` | Herramientas usadas, alcance y procedencia pendiente |
+
 
 ## Ciclo de trabajo
 
