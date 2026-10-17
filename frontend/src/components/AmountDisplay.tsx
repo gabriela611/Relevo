@@ -1,3 +1,5 @@
+import { currencySymbol } from '../model'
+
 interface AmountDisplayProps {
   amount: string
   currency?: string
@@ -5,6 +7,7 @@ interface AmountDisplayProps {
   scale?: number
   label?: string
   className?: string
+  animate?: boolean
 }
 
 export function AmountDisplay({
@@ -13,6 +16,7 @@ export function AmountDisplay({
   description,
   label,
   className = '',
+  animate = false,
 }: AmountDisplayProps) {
   return (
     <div className={`flex flex-col items-center text-center ${className}`}>
@@ -21,9 +25,10 @@ export function AmountDisplay({
           {label}
         </span>
       )}
-      <div className="flex items-baseline justify-center gap-2">
-        <span className="text-4xl sm:text-5xl font-bold tracking-tight text-[#17151D] tabular-nums">
-          {amount}
+      <div className="amount-display">
+        <span className="amount-number tabular-nums">
+          {currency && <span className="amount-symbol">{currencySymbol(currency)} </span>}
+          <span key={amount} className={animate ? 'amount-change' : undefined}>{amount}</span>
         </span>
         {currency && (
           <span className="text-sm sm:text-base font-semibold px-2 py-0.5 rounded-full bg-[#F2ECFF] text-[#5634A3]">

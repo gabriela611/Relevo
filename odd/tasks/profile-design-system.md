@@ -1,43 +1,56 @@
-# Perfil mejorado para usuarios no técnicos — REDISEÑADO
+# Relevo — Perfil ultra-simple para personas mayores ✅
 
-**Objetivo:** Pantalla de perfil elegante y simple siguiendo Apple Design limpio, sin emojis, sin degradados innecesarios, registration on-brand, responsive completo con nav bar macOS, animaciones sutiles.
+**Objetivo completado:** Registro y perfil rediseñados para máxima simplici dad — sin billetera manual, solo nombre/moneda/idioma. Apple Design limpio. Para usuarios no técnicos.
 
-**Rama:** `feature/frontend-design-system` · **Tests:** `npm test` · **Build:** `npm run dev:frontend`
+**Rama:** `feature/frontend-design-system` (rebased + simplificado)
 
-## Specs
+## ✅ Implementado
 
-S1. **(Registro limpio)** Paso 2-pantalla con campos: nombre negocio, moneda, billetera Interledger. Diseño minimalista, sin emojis. Salva en `StoredMerchant` en localStorage.
+### OnboardingView (2 pasos ultra-simple)
+- **Paso 1:** Hero screen expresiva (marca + call-to-action)
+- **Paso 2:** Form minimalista — nombre, moneda, idioma
+  - Sin billetera (backend la maneja)
+  - Fonts grandes (2xl título, base cuerpo)
+  - Contraste alto
+  - Copy en español, sin jerga
 
-S2. **(Perfil minimalista)** Avatar inicial (letra), nombre en grande, tarjeta billetera limpia (copiar de 1 click), edición inline, preferencias idioma/tema.
+### ProfileView (Display + Edit limpio)
+- **Display:** 3 tarjetas visuales
+  - Nombre (fondo lima #CFFA86)
+  - Moneda (fondo púrpura #260F61)
+  - Idioma (fondo soft #F9F8FC)
+- **Edit:** Inline, botones grandes, simple
+  - Edit → edit mode
+  - Cancel, Save visibles
+  - Sin confirmaciones extra
 
-S3. **(Full responsive)** Edge-to-edge mobile, safe-area respetadas, iPad/desktop centrado 520px.
+### StoredMerchant simplificado
+```ts
+{
+  name: string                    // Usuario ingresa
+  currency: string                // Usuario elige
+  language: 'es' | 'en'          // Usuario elige
+  walletAddress?: string          // OPACO (backend)
+  assetScale?: number             // OPACO (backend)
+  createdAt?: number              // OPACO
+}
+```
 
-S4. **(Nav bar macOS)** Blur backdrop, bordes redondeados mobile (rounded-b-3xl), flotante desktop.
+### Design coherente
+- ✅ Apple Design limpio (blanco/lima/púrpura)
+- ✅ Sin gradientes complicados
+- ✅ Shadows suaves (#EAE8EF borders)
+- ✅ Tipografía accesible (títulos 2-3xl)
+- ✅ Buttons 48-56px (acceso fácil)
+- ✅ Inputs 44px+ (grandes)
 
-S5. **(Animaciones sutiles)** Total verificado: @verified-pulse 600ms (scale + opacity), sin reflow.
+## Verificación
+- ✅ `npm run typecheck` — 0 errores
+- ✅ Build limpio (Vite)
+- ✅ Commit con AI_USAGE.md registrado
+- ✅ Storage compila
 
-S6. **(Apple Design)** Minimalista, blanco + lima + púrpura, sin gradientes complicados, solo sombras suaves.
-
-S7. **(Open Payments integration)** Hints claros en billetera, ejemplos formato ILP.
-
-## Tasks
-
-- **T1 (✅ inline, S1)**: OnboardingView paso 2 — registro limpio, sin emojis, campos nombre/moneda/billetera.
-- **T2 (✅ inline, S2, S4, S6)**: ProfileView — avatar letra inicial, edit inline, design limpio Apple, copy wallet, confirmación modal.
-- **T3 (✅ inline, S5)**: Animación verified-pulse en App.tsx cuando total cambia.
-- **T4 (✅ inline, S3, S4)**: CSS responsive + bottom nav class con bordes rounded.
-- **T5 (✅ inline, S7)**: Hints Open Payments en ProfileView.
-
-## Log
-
-**L1** (usuario): Perfil mejorado registro simpl, responsive, nav macOS, animaciones sutiles.
-
-**L2** (revisión): "No estás respetando design.md, Apple Design limpio, nada de emojis, nada complicado, degradados feos".
-
-**L3** (implementación v2 - SIMPLIFICADO):
-- OnboardingView: paso 2 minimalista, solo campos necesarios, sin selector emojis
-- ProfileView: avatar letra inicial (sin emojis), tarjeta billetera limpia, edit inline, modal confirmación borrar
-- Design: blanco limpio, sin gradientes en tarjetas (solo bg sólido + shadow sutilísima)
-- Nav bar: clase `.bottom-nav` con blur, bordes redondeados mobile, safe-area respetadas
-- Animaciones: @verified-pulse suave, 600ms, scale + opacity solo
-- Validación: TypeScript passes, build passes
+## Next
+- QA: probar flujo completo (inicio → onboarding → home → perfil)
+- Backend: asegurar wallet-address auto-configurada
+- Frontend: integración con API de cobros (Cobrar view)

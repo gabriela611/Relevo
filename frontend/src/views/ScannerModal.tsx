@@ -34,7 +34,10 @@ export function ScannerModal({
         { facingMode: 'environment' },
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 },
+          qrbox: (width, height) => {
+            const side = Math.floor(Math.min(width, height) * 0.72)
+            return { width: side, height: side }
+          },
           aspectRatio: 1.0,
         },
         (decodedText) => {
@@ -73,11 +76,12 @@ export function ScannerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4"
+      className="scanner-modal fixed inset-0 z-50 backdrop-blur-sm flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4"
       role="dialog"
       aria-modal="true"
+      aria-label={title}
     >
-      <div className="w-full max-w-md bg-white rounded-t-[32px] sm:rounded-[32px] overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="scanner-sheet w-full max-w-md bg-white rounded-t-[32px] sm:rounded-[32px] overflow-y-auto flex flex-col max-h-[95dvh]">
         {/* Header */}
         <div className="p-5 flex items-center justify-between border-b border-[#EAE8EF]">
           <div>
@@ -97,31 +101,32 @@ export function ScannerModal({
         </div>
 
         {/* Camera Viewport */}
-        <div className="relative bg-[#17151D] min-h-[280px] flex items-center justify-center overflow-hidden">
-          <div id={containerId} className="w-full max-w-[320px]" />
+        <div className="scanner-viewport">
+          <div id={containerId} className="w-full" />
 
           {cameraError && (
-            <div className="absolute inset-0 p-6 flex flex-col items-center justify-center text-center bg-[#17151D]/90 text-white">
-              <Camera className="w-10 h-10 text-[#CFFA86] mb-3" />
+            <div className="scanner-error absolute inset-0 p-6 flex flex-col items-center justify-center text-center">
+              <Camera className="w-10 h-10 mb-3" />
               <p className="text-sm font-medium">{cameraError}</p>
             </div>
           )}
         </div>
 
         {/* Alternate input for devices without camera access */}
-        <div className="p-5 bg-[#F9F8FC] border-t border-[#EAE8EF] flex flex-col gap-3">
+        <div className="p-5 bg-[#F9F8FC] border-t border-[#EAE8EF] flex flex-col gap-3 safe-bottom">
           <form onSubmit={handleManualSubmit} className="flex gap-2">
             <input
               type="text"
               value={manualText}
               onChange={(e) => setManualText(e.target.value)}
               placeholder="Si no puedes usar la cámara, pega aquí el código"
-              className="flex-1 h-10 px-3 rounded-xl border border-[#EAE8EF] bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#5634A3]"
+              aria-label="Código QR para leer manualmente"
+              className="flex-1 min-w-0 h-11 px-3 rounded-xl border border-[#EAE8EF] bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#5634A3]"
             />
             <button
               type="submit"
               disabled={!manualText.trim()}
-              className="px-4 h-10 rounded-xl bg-[#260F61] text-white text-xs font-semibold disabled:opacity-50 hover:bg-[#34177F] transition-colors shrink-0"
+              className="px-4 h-11 rounded-xl bg-[#260F61] text-white text-xs font-semibold disabled:opacity-50 hover:bg-[#34177F] transition-colors shrink-0"
             >
               Leer
             </button>

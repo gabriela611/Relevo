@@ -3,7 +3,6 @@ import {
   Header,
   BottomNav,
   IconAction,
-  WalletCard,
   TransactionRow,
   EmptyState,
   OfflineBanner,
@@ -16,7 +15,7 @@ import {
   ScannerModal,
   ProfileView,
 } from './views'
-import { resolveRoute, type Route } from './model'
+import { resolveRoute, formatAmountInput, formatMinorUnits, currencySymbol, formatReceivedToday, type Route } from './model'
 import { es } from './copy'
 import {
   QrCode,
@@ -30,7 +29,8 @@ import {
   getVerifiedTotalToday,
   listRedeemedReceipts,
   listSales,
-  saveMerchantProfile,
+  hasSeenOnboarding,
+  setOnboardingSeen,
 } from './storage'
 import './App.css'
 
@@ -40,6 +40,7 @@ export default function App() {
   const [targetSaleId, setTargetSaleId] = useState<string | undefined>(undefined)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [animateTotal, setAnimateTotal] = useState(false)
+  const [hasSeenWelcome, setHasSeenWelcome] = useState(() => hasSeenOnboarding())
   const prevTotalRef = useRef(0)
 
   const [merchant, setMerchant] = useState(() => getMerchantProfile())
@@ -91,9 +92,17 @@ export default function App() {
     }
   }
 
-  // If user is on bienvenida route
-  if (route === 'bienvenida') {
-    return <OnboardingView onStart={() => navigateTo('inicio')} />
+  // First-time onboarding or explicit bienvenida route
+  if (!hasSeenWelcome || route === 'bienvenida') {
+    return (
+      <OnboardingView
+        onStart={() => {
+          setOnboardingSeen(true)
+          setHasSeenWelcome(true)
+          navigateTo('inicio')
+        }}
+      />
+    )
   }
 
   return (
@@ -104,7 +113,7 @@ export default function App() {
         isOnline={isOnline}
       />
 
-        <main className="screen-enter flex-1 pb-24 px-5 pt-4">
+      <main className="app-content flex-1">
         {/* VIEW 1: HOME */}
         {route === 'inicio' && (
           <div className="flex flex-col gap-6">
@@ -130,9 +139,9 @@ export default function App() {
             </div>
 
             {/* Horizontal Hero Cards (Inspired by middle phone in reference image) */}
-            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none snap-x">
+            <div className="-mr-5 pr-5 flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x sm:mr-0 sm:pr-0 sm:grid sm:grid-cols-2">
               {/* Card 1: Verified Total Today (Lime / Forest Green) */}
-              <div className="min-w-[270px] flex-1 p-5 rounded-[24px] bg-[#CFFA86] text-[#260F61] card-shadow relative overflow-hidden snap-start flex flex-col justify-between h-38">
+              <div className="min-w-[270px] sm:min-w-0 flex-1 p-5 rounded-[24px] bg-[#CFFA86] text-[#260F61] card-shadow relative overflow-hidden snap-start flex flex-col justify-between min-h-[164px]">
                 <div className="relative z-10 flex flex-col">
                   <div className="flex items-center justify-between">
                     <span className="text-xs uppercase tracking-wider font-extrabold opacity-80">
@@ -145,7 +154,8 @@ export default function App() {
                   <span className={`text-3xl font-black tracking-tight tabular-nums mt-2 transition-transform duration-300 ${
                     animateTotal ? 'animate-verified-pulse' : ''
                   }`}>
-                    {verifiedTotal.toLocaleString('es-CO')} {merchant.currency}
+                    <span className="amount-symbol text-2xl font-bold">{currencySymbol(merchant.currency)} </span>
+                    {formatReceivedToday(recentReceipts, merchant.currency)}
                   </span>
                 </div>
 
@@ -161,7 +171,7 @@ export default function App() {
               </div>
 
               {/* Card 2: Offline Readiness (Forest Green & Lime) */}
-              <div className="min-w-[240px] p-5 rounded-[24px] bg-[#174F3A] text-white card-shadow relative overflow-hidden snap-start flex flex-col justify-between h-38">
+              <div className="min-w-[240px] sm:min-w-0 p-5 rounded-[24px] bg-[#174F3A] text-white card-shadow relative overflow-hidden snap-start flex flex-col justify-between min-h-[164px]">
                 <div className="relative z-10 flex flex-col">
                   <div className="flex items-center justify-between">
                     <span className="text-xs uppercase tracking-wider font-bold text-[#CFFA86]">
@@ -244,7 +254,7 @@ export default function App() {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                      formattedAmount={r.amountReceived.value}
+                      formattedAmount={formatMinorUnits(r.amountReceived.value, r.amountReceived.assetScale)}
                       currency={r.amountReceived.assetCode}
                       statusLabel="Verificado offline"
                       statusTone="success"
@@ -263,7 +273,7 @@ export default function App() {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                      formattedAmount={s.amount}
+                      formattedAmount={formatAmountInput(s.amount)}
                       currency={s.currency}
                       statusLabel="Esperando pago"
                       statusTone="warning"
@@ -335,7 +345,7 @@ export default function App() {
                     id={r.receiptId}
                     title={`Venta #${r.saleId.slice(0, 8)}`}
                     date={new Date(r.issuedAt).toLocaleString('es-CO')}
-                    formattedAmount={r.amountReceived.value}
+                    formattedAmount={formatMinorUnits(r.amountReceived.value, r.amountReceived.assetScale)}
                     currency={r.amountReceived.assetCode}
                     statusLabel="Verificado offline"
                     statusTone="success"

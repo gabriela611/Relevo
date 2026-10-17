@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { ArrowLeft, QrCode, ScanLine, X, Copy, Check } from 'lucide-react'
-import { PrimaryButton, LimeButton, Numpad, StatusChip } from '../components'
+import { PrimaryButton, LimeButton, Numpad, StatusChip, AmountDisplay } from '../components'
 import { editAmount, formatAmountInput } from '../model'
 import { encodeSaleToQr, type PaymentSaleRequest } from '@relevo/shared'
 import { getMerchantProfile, saveSale } from '../storage'
@@ -81,14 +81,7 @@ export function CollectView({ onBack, onScanReceipt }: CollectViewProps) {
         <span className="text-xs uppercase tracking-wider text-[#6F6B76] font-semibold mb-1">
           Importe a cobrar
         </span>
-        <div className="flex items-baseline justify-center gap-2">
-          <span className="text-4xl sm:text-5xl font-black text-[#17151D] tabular-nums tracking-tight">
-            {formatAmountInput(amount)}
-          </span>
-          <span className="text-sm font-bold text-[#5634A3] bg-[#F2ECFF] px-2.5 py-0.5 rounded-full">
-            {merchant.currency}
-          </span>
-        </div>
+        <AmountDisplay amount={formatAmountInput(amount)} currency={merchant.currency} animate />
         <div className="w-full mt-3">
           <input
             type="text"
@@ -116,9 +109,10 @@ export function CollectView({ onBack, onScanReceipt }: CollectViewProps) {
       {/* Modal: QR de Venta en Pantalla Completa */}
       {activeSale && saleQr && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-center items-center p-4 animate-in fade-in"
+          className="qr-modal fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center p-4"
           role="dialog"
           aria-modal="true"
+          aria-label="Cobro listo para compartir"
         >
           <div className="w-full max-w-sm bg-white rounded-[32px] p-6 flex flex-col items-center text-center relative card-shadow">
             <button
@@ -133,15 +127,13 @@ export function CollectView({ onBack, onScanReceipt }: CollectViewProps) {
             <span className="text-xs uppercase font-bold tracking-wider text-[#5634A3] mb-1">
               {activeSale.merchantName}
             </span>
-            <h2 className="text-2xl font-black text-[#17151D] tabular-nums">
-              {activeSale.amount} {activeSale.currency}
-            </h2>
+            <AmountDisplay amount={formatAmountInput(activeSale.amount)} currency={activeSale.currency} className="qr-amount" />
             <p className="text-xs text-[#6F6B76] mb-4">
               {description || 'Venta presencial'}
             </p>
 
             {/* High Contrast QR Code */}
-            <div className="qr-panel p-4 bg-white rounded-2xl border-2 border-[#17151D] shadow-sm mb-4">
+            <div className="qr-panel p-4 bg-white rounded-2xl border border-[#EAE8EF] shadow-sm mb-4">
               <QRCodeSVG
                 value={saleQr}
                 size={230}

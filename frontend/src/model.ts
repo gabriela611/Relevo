@@ -37,6 +37,55 @@ export function formatAmountInput(value: string, locale = 'es-CO'): string {
   return `${groupedWhole}${separator}${fraction}`
 }
 
+/** Presentation only: the ISO code remains visible beside potentially shared symbols. */
+export function currencySymbol(currency: string, locale = 'es-CO'): string {
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+      .formatToParts(0).find(part => part.type === 'currency')?.value ?? currency
+  } catch {
+    return currency
+  }
+}
+
+export interface ReceivedReceiptForToday {
+  amountReceived: {
+    value: string
+    assetScale: number
+    assetCode: string
+  }
+  issuedAt: number
+  mode?: string
+}
+
+export function formatReceivedToday(
+  receipts: ReceivedReceiptForToday[],
+  currency: string,
+  now = new Date(),
+  locale = 'es-CO'
+): string {
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime()
+
+  const valid = receipts.filter((r) => {
+    if (!r.amountReceived || r.amountReceived.assetCode !== currency) return false
+    if (r.mode === 'simulator') return false
+    return r.issuedAt >= startOfDay && r.issuedAt <= endOfDay
+  })
+
+  if (valid.length === 0) return '0'
+
+  const maxScale = Math.max(...valid.map((r) => r.amountReceived.assetScale || 0))
+  let totalMinor = 0n
+
+  for (const r of valid) {
+    const scale = r.amountReceived.assetScale || 0
+    const factor = 10n ** BigInt(maxScale - scale)
+    totalMinor += BigInt(r.amountReceived.value || '0') * factor
+  }
+
+  return formatMinorUnits(totalMinor.toString(), maxScale, locale)
+}
+
 export function editAmount(current: string, key: string): string {
   if (key === 'delete') return current.slice(0, -1) || '0'
   if (!/^[0-9.]$/.test(key) || current.length >= 15) return current
