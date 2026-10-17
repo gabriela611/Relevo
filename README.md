@@ -95,12 +95,14 @@ sequenceDiagram
 
 | Estado | Descripción |
 | :--- | :--- |
-| **Esperando pago** (`WAITING_PAYMENT`) | Solicitud creada por el comercio, dinero todavía no recibido. |
+| **Esperando pago** (`WAITING_PAYMENT`) | Venta creada por el comercio y dinero todavía no recibido. Si un intento de pago es rechazado o falla, la venta **vuelve a este estado** para que el comprador pueda reintentar. |
 | **Autorización pendiente** (`AUTHORIZATION_PENDING`) | El comprador aún debe consentir el pago mediante GNAP. |
 | **Procesando** (`PROCESSING`) | Transferencia iniciada en la red Interledger, pendiente de confirmación. |
 | **Pago verificado** (`PAYMENT_VERIFIED`) | Recepción comprobada por el backend en el proveedor Open Payments. |
 | **Verificado offline** (`OFFLINE_VERIFIED`) | Comprobante firmado validado localmente en el dispositivo del vendedor sin internet. |
-| **Fallido o vencido** (`FAILED_OR_EXPIRED`) | Pago no completado o expirado. |
+| **Vencida** (`FAILED_OR_EXPIRED`) | La **venta misma** expiró (`expiresAt`) sin pagarse; ya no se puede pagar. Un intento rechazado o fallido no lleva a este estado. |
+
+Cada venta puede tener varios **intentos de pago** con su propio estado (`attemptStatus`: `QUOTED`, `AUTHORIZATION_PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`). La correspondencia con los estados de la venta está en [docs/API.md](docs/API.md#two-status-vocabularies).
 
 > **Regla de Oro de Seguridad:** Nunca debe marcarse una venta como pagada únicamente porque existe una autorización, una captura de pantalla o un recurso marcado como completado sin comprobar su importe realmente recibido.
 

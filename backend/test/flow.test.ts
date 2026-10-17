@@ -120,6 +120,13 @@ test('full flow: quote -> authorize -> callback issues a receipt that verifies o
   assert.equal(receipt.keyId, pinnedKey.keyId);
   assert.equal('payerWallet' in receipt || 'payerWalletAddress' in receipt, false);
 
+  // Attempt and sale vocabularies are reported separately.
+  const paymentId = new URL(cb.headers.location as string).searchParams.get('paymentId');
+  const attempt = (await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json();
+  assert.equal(attempt.attemptStatus, 'COMPLETED');
+  assert.equal(attempt.saleStatus, 'PAYMENT_VERIFIED');
+  assert.equal('status' in attempt, false);
+
   // Callback replay is harmless and does not issue a second receipt.
   await app.inject({ method: 'GET', url: callbackPath(redirectUrl) });
   const again = (await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` })).json();
@@ -201,7 +208,8 @@ test('buyer rejecting in the wallet -> payment=failed&reason=GRANT_REJECTED, sal
   assert.match(loc.searchParams.get('error') ?? '', /rechazó/);
 
   const status = (await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json();
-  assert.equal(status.status, 'FAILED');
+  assert.equal(status.attemptStatus, 'FAILED');
+  assert.equal(status.saleStatus, 'WAITING_PAYMENT');
   const { sale: stored, receipt } = (await app.inject({ method: 'GET', url: `/api/sales/${sale.saleId}` })).json();
   assert.equal(stored.status, 'WAITING_PAYMENT');
   assert.equal(receipt, null);
@@ -246,7 +254,7 @@ test('quote expiring within 60 s is re-quoted instead of authorized', async () =
     assert.ok(first.quote.expiresAt - Date.now() > 60_000);
 
     const old = (await app.inject({ method: 'GET', url: `/api/payments/${quote.quoteId}` })).json();
-    assert.equal(old.status, 'FAILED');
+    assert.equal(old.attemptStatus, 'FAILED');
     assert.match(old.error, /^QUOTE_EXPIRED/);
 
     const second = (await app.inject({ method: 'POST', url: '/api/payments/authorize', payload: { quoteId: first.quote.quoteId } })).json();
@@ -293,7 +301,7 @@ test('interaction hash: MATCH recorded; mismatch warns when STRICT_HASH=false an
     assert.equal(loc.searchParams.get('reason'), 'HASH_MISMATCH');
     const status = (await app.inject({ method: 'GET', url: `/api/payments/${paymentId}` })).json();
     assert.equal(status.hashCheck, 'MISMATCH');
-    assert.equal(status.status, 'FAILED');
+    assert.equal(status.attemptStatus, 'FAILED');
     assert.equal((await app.inject({ method: 'GET', url: `/api/receipts/${sale.saleId}` })).statusCode, 404);
   } finally {
     config.strictHash = false;

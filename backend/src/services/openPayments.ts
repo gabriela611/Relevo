@@ -236,12 +236,18 @@ export class OpenPaymentsService {
     return run;
   }
 
+  /**
+   * Two separate vocabularies, deliberately named apart:
+   *  - attemptStatus: this payment attempt (QUOTED | AUTHORIZATION_PENDING | PROCESSING | COMPLETED | FAILED)
+   *  - saleStatus: the sale, one of the 6 README states
+   */
   getPaymentStatus(paymentId: string) {
     const a = this.requireAttempt(paymentId);
     return {
       paymentId: a.id,
       saleId: a.saleId,
-      status: a.status,
+      attemptStatus: a.status,
+      saleStatus: dbService.getSale(a.saleId)?.status,
       error: a.error,
       hashCheck: a.hashCheck,
       redirectUrl: a.status === 'AUTHORIZATION_PENDING' ? a.redirectUrl : undefined,

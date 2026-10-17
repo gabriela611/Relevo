@@ -76,12 +76,31 @@ Don't do arithmetic on these strings in the UI; show them as they come.
 | POST | `/api/payments/quote` | `{ sale, payerWalletAddress }` | `{ quote: CurrencyQuote }`. 409 if already paid, 410 if the sale expired |
 | POST | `/api/payments/authorize` | `{ quoteId }` | `{ requoted: false, paymentId, redirectUrl }` or `{ requoted: true, quote }` (quote expiring in < 60 s) |
 | GET | `/api/payments/callback` | set by the backend (GNAP finish) | 302 to the frontend (see reasons above) |
-| GET | `/api/payments/:paymentId` | – | `{ paymentId, saleId, status: QUOTED\|AUTHORIZATION_PENDING\|PROCESSING\|COMPLETED\|FAILED, error?, hashCheck?: MATCH\|MISMATCH\|ABSENT, quote }` |
+| GET | `/api/payments/:paymentId` | – | `{ paymentId, saleId, attemptStatus, saleStatus, error?, hashCheck?: MATCH\|MISMATCH\|ABSENT, quote }` (see "Two status vocabularies") |
 | POST | `/api/payments/verify` | `{ saleId }` | `{ status: 'PAYMENT_VERIFIED', receipt }` or `{ status: 'PROCESSING', receivedAmount, expectedAmount }` |
 | GET | `/api/receipts/:saleId` | – | `{ receipt: VerifiedReceipt }` or 404 |
 | POST | `/api/sync` | `OfflineSyncRecord[]` | `{ syncedCount, totalReceived, rejected: [{saleId, reason: INVALID_SIGNATURE\|MODE_MISMATCH}] }` |
 
-Sale status (`sale.status`): `WAITING_PAYMENT → AUTHORIZATION_PENDING → PROCESSING → PAYMENT_VERIFIED → (merchant scans) OFFLINE_VERIFIED`. A failed or rejected attempt sends the sale back to `WAITING_PAYMENT`. An expired sale becomes `FAILED_OR_EXPIRED`.
+## Two status vocabularies
+
+A **sale** can have several payment **attempts** (one per quote). They use different fields so they can't be confused:
+
+- **`saleStatus`** in `GET /api/payments/:id`, and **`sale.status`** in `/api/sales/*`: one of the 6 README states. **Drive the UI from this.**
+- **`attemptStatus`** in `GET /api/payments/:id`: the state of that single attempt, mostly useful for debugging.
+
+| `attemptStatus` | `saleStatus` at that moment | Meaning |
+|---|---|---|
+| `QUOTED` | `WAITING_PAYMENT` | Quote shown; the buyer hasn't authorized yet |
+| `AUTHORIZATION_PENDING` | `AUTHORIZATION_PENDING` | Buyer sent to their wallet to consent |
+| `PROCESSING` | `PROCESSING` | Consent given; outgoing payment sent, waiting for funds |
+| `COMPLETED` | `PAYMENT_VERIFIED` | Funds verified on the merchant's incoming payment; receipt signed |
+| `FAILED` | `WAITING_PAYMENT` | Attempt rejected or failed (see `error`/`reason`). **The sale stays payable: quote again** |
+| `FAILED` | `FAILED_OR_EXPIRED` | The **sale itself** expired; it can't be paid any more |
+| (any) | `OFFLINE_VERIFIED` | The merchant scanned the receipt and synced it (`/api/sync`) |
+
+`FAILED_OR_EXPIRED` means the **sale** expired, never that a single attempt failed.
+
+Sale lifecycle: `WAITING_PAYMENT → AUTHORIZATION_PENDING → PROCESSING → PAYMENT_VERIFIED → (merchant scans) OFFLINE_VERIFIED`; any of the first three → `FAILED_OR_EXPIRED` once `sale.expiresAt` passes.
 
 ## Receipt v2 (what the buyer shows as a QR)
 

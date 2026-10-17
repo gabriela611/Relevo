@@ -136,7 +136,7 @@ try {
   }
   if (!receipt) fail('los fondos no llegaron al incoming payment del comercio.');
   const final = await api('GET', `/api/payments/${auth.paymentId}`);
-  log(`[6] attempt status: ${final.status}`);
+  log(`[6] attempt status: ${final.attemptStatus} · sale status: ${final.saleStatus}`);
   log(`    incoming payment: ${receipt.incomingPaymentId}`);
   log(`    outgoing payment: ${receipt.outgoingPaymentId}`);
 
