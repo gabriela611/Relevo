@@ -7,7 +7,9 @@ import {
   EmptyState,
   OfflineBanner,
   DemoToolbar,
+  TransactionDetailModal,
 } from './components'
+import type { PaymentSaleRequest, VerifiedReceipt } from '@relevo/shared'
 import {
   CollectView,
   PayView,
@@ -42,6 +44,8 @@ export default function App() {
   const [demoScannedReceipt, setDemoScannedReceipt] = useState<string | undefined>(undefined)
   const [targetSaleId, setTargetSaleId] = useState<string | undefined>(undefined)
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [selectedSale, setSelectedSale] = useState<PaymentSaleRequest | null>(null)
+  const [selectedReceipt, setSelectedReceipt] = useState<VerifiedReceipt | null>(null)
   const [animateTotal, setAnimateTotal] = useState(false)
   const [hasSeenWelcome, setHasSeenWelcome] = useState(() => hasSeenOnboarding())
   const prevTotalRef = useRef(0)
@@ -263,7 +267,7 @@ export default function App() {
                       currency={r.amountReceived.assetCode}
                       statusLabel="Verificado offline"
                       statusTone="success"
-                      onClick={() => navigateTo('movimientos')}
+                      onClick={() => setSelectedReceipt(r)}
                     />
                   ))}
                 </div>
@@ -282,7 +286,7 @@ export default function App() {
                       currency={s.currency}
                       statusLabel="Esperando pago"
                       statusTone="warning"
-                      onClick={() => navigateTo('cobrar')}
+                      onClick={() => setSelectedSale(s)}
                     />
                   ))}
                 </div>
@@ -348,20 +352,48 @@ export default function App() {
               <p className="text-sm text-[#6F6B76] mt-1">{es.activity.subtitle}</p>
             </div>
 
-            {recentReceipts.length > 0 ? (
-              <div className="flex flex-col gap-2.5">
-                {recentReceipts.map((r) => (
-                  <TransactionRow
-                    key={r.receiptId}
-                    id={r.receiptId}
-                    title={`Venta #${r.saleId.slice(0, 8)}`}
-                    date={new Date(r.issuedAt).toLocaleString('es-CO')}
-                    formattedAmount={formatMinorUnits(r.amountReceived.value, r.amountReceived.assetScale)}
-                    currency={r.amountReceived.assetCode}
-                    statusLabel="Verificado offline"
-                    statusTone="success"
-                  />
-                ))}
+            {recentReceipts.length > 0 || recentSales.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {recentReceipts.length > 0 && (
+                  <div className="flex flex-col gap-2.5">
+                    {recentReceipts.map((r) => (
+                      <TransactionRow
+                        key={r.receiptId}
+                        id={r.receiptId}
+                        title={`Venta #${r.saleId.slice(0, 8)}`}
+                        date={new Date(r.issuedAt).toLocaleString('es-CO')}
+                        formattedAmount={formatMinorUnits(r.amountReceived.value, r.amountReceived.assetScale)}
+                        currency={r.amountReceived.assetCode}
+                        statusLabel="Verificado offline"
+                        statusTone="success"
+                        onClick={() => setSelectedReceipt(r)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {recentSales.length > 0 && (
+                  <div className="flex flex-col gap-2.5">
+                    <span className="text-xs font-semibold text-[#6F6B76] uppercase tracking-wider">
+                      Cobros pendientes
+                    </span>
+                    {recentSales.map((s) => (
+                      <TransactionRow
+                        key={s.saleId}
+                        id={s.saleId}
+                        title="Cobro generado"
+                        date={new Date(s.createdAt).toLocaleTimeString('es-CO', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        formattedAmount={formatAmountInput(s.amount)}
+                        currency={s.currency}
+                        statusLabel="Esperando pago"
+                        statusTone="warning"
+                        onClick={() => setSelectedSale(s)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <EmptyState
@@ -404,6 +436,23 @@ export default function App() {
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScan={handleQuickScan}
+      />
+
+      {/* Transaction / Cobro Detail Modal */}
+      <TransactionDetailModal
+        sale={selectedSale}
+        receipt={selectedReceipt}
+        isOpen={Boolean(selectedSale || selectedReceipt)}
+        onClose={() => {
+          setSelectedSale(null)
+          setSelectedReceipt(null)
+        }}
+        onScanReceipt={(saleId) => {
+          setSelectedSale(null)
+          setSelectedReceipt(null)
+          setTargetSaleId(saleId)
+          navigateTo('verificar' as Route)
+        }}
       />
 
       {/* Judge & Simulation Toolbar */}

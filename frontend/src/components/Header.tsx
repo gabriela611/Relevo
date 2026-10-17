@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft } from 'lucide-react'
 import type { Route } from '../model'
 
 interface HeaderProps {
@@ -8,8 +7,7 @@ interface HeaderProps {
   isOnline?: boolean
 }
 
-export function Header({ currentRoute, onRouteChange, isOnline = true }: HeaderProps) {
-  const isSubRoute = ['cobrar', 'pagar', 'configurar', 'verificar'].includes(currentRoute)
+export function Header({ isOnline = true }: HeaderProps) {
   const [showConnection, setShowConnection] = useState(false)
   const connectionRef = useRef<HTMLDivElement>(null)
   const toggleRef = useRef<HTMLButtonElement>(null)
@@ -36,16 +34,9 @@ export function Header({ currentRoute, onRouteChange, isOnline = true }: HeaderP
   return (
     <header className="glass-header sticky top-0 z-20 safe-top">
       <div className="header-content">
-        <div className="flex items-center gap-3">
-          {isSubRoute && (
-            <button type="button" onClick={() => onRouteChange('inicio')} className="header-back" aria-label="Volver al inicio">
-              <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-            </button>
-          )}
-          <div className="flex items-center gap-2.5">
-            <img src="/favicon.svg" alt="" className="w-7 h-7 object-contain" />
-            <span className="font-extrabold text-lg tracking-tight text-[#17151D]">Relevo</span>
-          </div>
+        <div className="flex items-center gap-2.5">
+          <img src="/favicon.svg" alt="" className="w-7 h-7 object-contain" />
+          <span className="font-extrabold text-lg tracking-tight text-[#17151D]">Relevo</span>
         </div>
         <div ref={connectionRef} className="connectivity-control">
           <button
